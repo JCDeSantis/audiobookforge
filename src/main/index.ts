@@ -1,12 +1,18 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
+import { registerSettingsIpc } from './ipc/settings.ipc'
+import { registerFilesIpc } from './ipc/files.ipc'
+import { registerAbsIpc } from './ipc/abs.ipc'
+import { registerQueueIpc } from './ipc/queue.ipc'
+import { registerWhisperIpc } from './ipc/whisper.ipc'
 
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width: 1000,
+    height: 680,
     show: false,
     autoHideMenuBar: true,
+    backgroundColor: '#0a0000',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
@@ -22,23 +28,24 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  // HMR for renderer base on electron-vite cli.
-  // Load the remote URL for development or the local html file for production.
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
+
+  // Register IPC handlers — queue needs the window reference for push events
+  registerSettingsIpc()
+  registerFilesIpc()
+  registerAbsIpc()
+  registerQueueIpc(mainWindow)
+  registerWhisperIpc()
 }
 
 app.whenReady().then(() => {
-  // Set app user model id for windows
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.audiobookforge')
   }
-
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
 
   createWindow()
 
