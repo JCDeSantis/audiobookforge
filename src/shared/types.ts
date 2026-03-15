@@ -1,0 +1,124 @@
+// ─── Whisper ────────────────────────────────────────────────────────────────
+
+export type WhisperModel =
+  | 'tiny'
+  | 'base'
+  | 'small'
+  | 'medium'
+  | 'large-v2'
+  | 'large-v3'
+  | 'large-v3-turbo'
+
+export interface WhisperProgressEvent {
+  jobId: string
+  phase: 'preparing' | 'segmenting' | 'transcribing' | 'done' | 'error'
+  percent: number
+  segmentIndex?: number
+  segmentCount?: number
+  liveText?: string
+  error?: string
+}
+
+// ─── Queue ───────────────────────────────────────────────────────────────────
+
+export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
+
+export interface TranscriptionJob {
+  id: string
+  status: JobStatus
+  source: 'local' | 'abs'
+  title: string
+  audioFiles: string[]
+  outputPath: string | null      // output folder for local jobs; null for ABS
+  absItemId: string | null
+  epubPath: string | null
+  model: WhisperModel
+  progress: WhisperProgressEvent | null
+  srtPath: string | null         // temp path during/after transcription
+  error: string | null
+  createdAt: number
+  completedAt: number | null
+}
+
+// ─── ABS ─────────────────────────────────────────────────────────────────────
+
+export interface AbsLibrary {
+  id: string
+  name: string
+  mediaType: string
+}
+
+export interface AbsAudioFile {
+  index: number
+  ino: string
+  metadata: { filename: string; ext: string; path: string; relPath: string }
+  duration: number
+  mimeType: string
+  addedAt: number
+  updatedAt: number
+}
+
+export interface AbsBook {
+  id: string
+  title: string
+  authorName: string
+  duration: number               // seconds
+  cover: string | null           // cover URL relative to ABS server
+  hasSubtitles: boolean
+  ebookPath: string | null       // absolute path if same-machine ABS
+  audioFiles: AbsAudioFile[]
+}
+
+export interface AbsBookSummary {
+  id: string
+  title: string
+  authorName: string
+  duration: number
+  cover: string | null
+  hasSubtitles: boolean
+  ebookPath: string | null
+  audioFiles: AbsAudioFile[]
+}
+
+// ─── Settings ────────────────────────────────────────────────────────────────
+
+export interface AppSettings {
+  absUrl: string
+  defaultModel: WhisperModel
+}
+
+// ─── IPC channels ────────────────────────────────────────────────────────────
+
+export const IPC = {
+  // Whisper
+  WHISPER_PROGRESS: 'whisper:progress',
+  WHISPER_CANCEL: 'whisper:cancel',
+  WHISPER_STORAGE_INFO: 'whisper:storage-info',
+
+  // Files
+  FILES_PICK_AUDIO: 'files:pick-audio',
+  FILES_PICK_EPUB: 'files:pick-epub',
+  FILES_PICK_OUTPUT_FOLDER: 'files:pick-output-folder',
+  FILES_SHOW_IN_EXPLORER: 'files:show-in-explorer',
+
+  // Queue
+  QUEUE_ADD: 'queue:add',
+  QUEUE_REMOVE: 'queue:remove',
+  QUEUE_REORDER: 'queue:reorder',
+  QUEUE_CANCEL: 'queue:cancel',
+  QUEUE_GET_ALL: 'queue:get-all',
+  QUEUE_CLEAR_DONE: 'queue:clear-done',
+  QUEUE_UPDATED: 'queue:updated',
+
+  // ABS
+  ABS_TEST_CONNECTION: 'abs:test-connection',
+  ABS_GET_LIBRARIES: 'abs:get-libraries',
+  ABS_GET_BOOKS: 'abs:get-books',
+  ABS_GET_BOOK: 'abs:get-book',
+  ABS_UPLOAD_SUBTITLE: 'abs:upload-subtitle',
+
+  // Settings
+  SETTINGS_GET: 'settings:get',
+  SETTINGS_SET_URL: 'settings:set-url',
+  SETTINGS_SET_API_KEY: 'settings:set-api-key',
+} as const
