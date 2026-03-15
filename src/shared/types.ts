@@ -49,6 +49,9 @@ export interface TranscriptionJob {
   audioFiles: string[]
   outputPath: string | null      // output folder for local jobs; null for ABS
   absItemId: string | null
+  absLibraryId: string | null
+  absFolderId: string | null
+  absAuthorName: string | null
   epubPath: string | null
   model: WhisperModel
   progress: WhisperProgressEvent | null
@@ -78,6 +81,8 @@ export interface AbsAudioFile {
 
 export interface AbsBook {
   id: string
+  libraryId: string
+  folderId: string
   title: string
   authorName: string
   duration: number               // seconds
@@ -89,6 +94,8 @@ export interface AbsBook {
 
 export interface AbsBookSummary {
   id: string
+  libraryId: string
+  folderId: string
   title: string
   authorName: string
   duration: number

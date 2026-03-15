@@ -33,6 +33,9 @@ function JobCard({ job }: { job: TranscriptionJob }): React.JSX.Element {
       audioFiles: job.audioFiles,
       outputPath: job.outputPath,
       absItemId: job.absItemId,
+      absLibraryId: job.absLibraryId,
+      absFolderId: job.absFolderId,
+      absAuthorName: job.absAuthorName,
       epubPath: job.epubPath,
       model: job.model
     })

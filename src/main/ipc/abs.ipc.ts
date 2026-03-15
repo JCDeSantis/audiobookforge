@@ -27,6 +27,8 @@ interface AbsApiAudioFile {
 
 interface AbsApiItem {
   id: string
+  libraryId?: string
+  folderId?: string
   media?: {
     metadata?: { title?: string; authorName?: string }
     duration?: number
@@ -76,6 +78,8 @@ export function mapAbsItemToBook(item: AbsApiItem, baseUrl: string): AbsBook {
 
   return {
     id: item.id,
+    libraryId: item.libraryId ?? '',
+    folderId: item.folderId ?? '',
     title: meta.title ?? 'Unknown',
     authorName: meta.authorName ?? 'Unknown',
     duration: media.duration ?? 0,
@@ -97,12 +101,21 @@ export async function uploadSubtitleToAbs(
   baseUrl: string,
   apiKey: string,
   itemId: string,
-  srtPath: string
+  srtPath: string,
+  libraryId: string,
+  folderId: string,
+  title: string,
+  authorName: string
 ): Promise<void> {
-  const url = `${baseUrl}/api/items/${itemId}/upload`
+  const url = `${baseUrl}/api/upload`
   const filename = basename(srtPath)
   const form = new FormData()
-  form.append('files', createReadStream(srtPath), { filename, contentType: 'text/srt' })
+  // Required fields for MiscController.handleUpload
+  form.append('library', libraryId)
+  form.append('folder', folderId)
+  form.append('title', title)
+  form.append('author', authorName)
+  form.append('files', createReadStream(srtPath), { filename, contentType: 'text/plain' })
 
   try {
     await axios.post(url, form, {
@@ -113,9 +126,13 @@ export async function uploadSubtitleToAbs(
       maxContentLength: Infinity,
       maxBodyLength: Infinity
     })
+    // Trigger item rescan so ABS detects the new SRT in its folder
+    await axios.post(`${baseUrl}/api/items/${itemId}/scan`, null, {
+      headers: authHeaders(apiKey)
+    })
   } catch (err) {
     if (axios.isAxiosError(err) && err.response) {
-      throw new Error(`SRT upload failed (HTTP ${err.response.status}) — ${url}`)
+      throw new Error(`SRT upload failed (HTTP ${err.response.status}) — ${url}: ${String(err.response.data ?? '')}`)
     }
     throw err
   }
@@ -160,8 +177,4 @@ export function registerAbsIpc(): void {
     return mapAbsItemToBook(res.data, baseUrl)
   })
 
-  ipcMain.handle(IPC.ABS_UPLOAD_SUBTITLE, async (_event, itemId: string, srtPath: string) => {
-    const { baseUrl, apiKey } = await getBaseUrlAndKey()
-    await uploadSubtitleToAbs(baseUrl, apiKey, itemId, srtPath)
-  })
 }

@@ -139,6 +139,8 @@ export function AbsLibraryModal(): React.JSX.Element {
       const fullBook = await window.electron.abs.getBook(book.id)
       setWizardAbsItem({
         id: fullBook.id,
+        libraryId: fullBook.libraryId,
+        folderId: fullBook.folderId,
         title: fullBook.title,
         authorName: fullBook.authorName,
         duration: fullBook.duration,

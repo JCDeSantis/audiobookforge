@@ -82,6 +82,9 @@ export function TranscribePage(): React.JSX.Element {
           : wizard.audioFiles,
       outputPath: wizard.source === 'local' ? wizard.outputFolder : null,
       absItemId: wizard.source === 'abs' && wizard.absItem ? wizard.absItem.id : null,
+      absLibraryId: wizard.source === 'abs' && wizard.absItem ? wizard.absItem.libraryId : null,
+      absFolderId: wizard.source === 'abs' && wizard.absItem ? wizard.absItem.folderId : null,
+      absAuthorName: wizard.source === 'abs' && wizard.absItem ? wizard.absItem.authorName : null,
       epubPath:
         wizard.source === 'abs' && wizard.absItem?.ebookPath
           ? wizard.absItem.ebookPath
