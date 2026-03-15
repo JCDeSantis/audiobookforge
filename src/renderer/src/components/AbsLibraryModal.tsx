@@ -130,19 +130,30 @@ export function AbsLibraryModal(): React.JSX.Element {
       )
     : currentBooks
 
-  const handleSelectBook = (book: AbsBook): void => {
-    setWizardAbsItem({
-      id: book.id,
-      title: book.title,
-      authorName: book.authorName,
-      duration: book.duration,
-      cover: book.cover,
-      hasSubtitles: book.hasSubtitles,
-      ebookPath: book.ebookPath,
-      audioFiles: book.audioFiles
-    })
-    setWizardSource('abs')
-    setAbsModalOpen(false)
+  const [selecting, setSelecting] = useState<string | null>(null)
+
+  const handleSelectBook = async (book: AbsBook): Promise<void> => {
+    setSelecting(book.id)
+    try {
+      // Fetch full item details to get audioFiles (not included in library list response)
+      const fullBook = await window.electron.abs.getBook(book.id)
+      setWizardAbsItem({
+        id: fullBook.id,
+        title: fullBook.title,
+        authorName: fullBook.authorName,
+        duration: fullBook.duration,
+        cover: fullBook.cover,
+        hasSubtitles: fullBook.hasSubtitles,
+        ebookPath: fullBook.ebookPath,
+        audioFiles: fullBook.audioFiles
+      })
+      setWizardSource('abs')
+      setAbsModalOpen(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load book details')
+    } finally {
+      setSelecting(null)
+    }
   }
 
   return (
@@ -227,8 +238,14 @@ export function AbsLibraryModal(): React.JSX.Element {
             {filteredBooks.map((book) => (
               <div
                 key={book.id}
-                className="flex cursor-pointer items-center gap-3 rounded border border-[#1a0000] bg-[#0d0000] px-3 py-2 hover:border-[#3f0000] hover:bg-[#120000] transition-colors"
-                onClick={() => handleSelectBook(book)}
+                className={`flex items-center gap-3 rounded border px-3 py-2 transition-colors ${
+                  selecting === book.id
+                    ? 'cursor-wait border-[#3f0000] bg-[#120000] opacity-70'
+                    : selecting !== null
+                    ? 'cursor-not-allowed border-[#1a0000] bg-[#0d0000] opacity-40'
+                    : 'cursor-pointer border-[#1a0000] bg-[#0d0000] hover:border-[#3f0000] hover:bg-[#120000]'
+                }`}
+                onClick={() => selecting === null && handleSelectBook(book)}
               >
                 {/* Cover art */}
                 {book.cover ? (
@@ -258,7 +275,13 @@ export function AbsLibraryModal(): React.JSX.Element {
 
                 {/* Status badge */}
                 <div className="flex-shrink-0">
-                  {subtitleBadge(book, queuedAbsIds.has(book.id))}
+                  {selecting === book.id ? (
+                    <span className="rounded-[3px] bg-[#1a0000] px-1.5 py-0.5 text-[9px] text-[#6b2222]">
+                      Loading…
+                    </span>
+                  ) : (
+                    subtitleBadge(book, queuedAbsIds.has(book.id))
+                  )}
                 </div>
               </div>
             ))}
