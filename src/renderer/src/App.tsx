@@ -1,35 +1,37 @@
-import Versions from './components/Versions'
-import electronLogo from './assets/electron.svg'
+import { useEffect } from 'react'
+import { useAppStore } from './store/useAppStore'
+import { SourcePage } from './pages/SourcePage'
+import { SettingsPage } from './pages/SettingsPage'
+import { TranscribePage } from './pages/TranscribePage'
+import { QueuePanel } from './components/QueuePanel'
+import { AbsLibraryModal } from './components/AbsLibraryModal'
 
-function App(): React.JSX.Element {
-  const ipcHandle = (): void => window.electron.ipcRenderer.send('ping')
+export default function App(): JSX.Element {
+  const { wizard, setJobs, setSettings, absModalOpen } = useAppStore()
+
+  // Load settings and queue on mount, subscribe to live queue updates
+  useEffect(() => {
+    window.electron.settings.get().then(setSettings).catch(console.error)
+    window.electron.queue.getAll().then(setJobs).catch(console.error)
+
+    const unsub = window.electron.queue.onUpdated((jobs) => setJobs(jobs))
+    return unsub
+  }, [])
 
   return (
-    <>
-      <img alt="logo" className="logo" src={electronLogo} />
-      <div className="creator">Powered by electron-vite</div>
-      <div className="text">
-        Build an Electron app with <span className="react">React</span>
-        &nbsp;and <span className="ts">TypeScript</span>
+    <div className="flex h-screen w-screen overflow-hidden bg-[#0a0000]">
+      {/* Left: 3-step wizard */}
+      <div className="flex flex-1 flex-col overflow-hidden border-r border-[#2a0000]">
+        {wizard.step === 1 && <SourcePage />}
+        {wizard.step === 2 && <SettingsPage />}
+        {wizard.step === 3 && <TranscribePage />}
       </div>
-      <p className="tip">
-        Please try pressing <code>F12</code> to open the devTool
-      </p>
-      <div className="actions">
-        <div className="action">
-          <a href="https://electron-vite.org/" target="_blank" rel="noreferrer">
-            Documentation
-          </a>
-        </div>
-        <div className="action">
-          <a target="_blank" rel="noreferrer" onClick={ipcHandle}>
-            Send IPC
-          </a>
-        </div>
-      </div>
-      <Versions></Versions>
-    </>
+
+      {/* Right: persistent queue panel — also owns AppSettingsPanel */}
+      <QueuePanel />
+
+      {/* ABS Library Modal */}
+      {absModalOpen && <AbsLibraryModal />}
+    </div>
   )
 }
-
-export default App
