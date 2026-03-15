@@ -11,7 +11,7 @@ export type WhisperModel =
 
 export interface WhisperProgressEvent {
   jobId: string
-  phase: 'preparing' | 'segmenting' | 'transcribing' | 'done' | 'error'
+  phase: 'downloading-binary' | 'downloading-model' | 'preparing' | 'segmenting' | 'transcribing' | 'done' | 'error'
   percent: number
   segmentIndex?: number
   segmentCount?: number
