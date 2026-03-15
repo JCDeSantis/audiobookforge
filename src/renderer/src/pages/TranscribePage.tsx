@@ -41,7 +41,7 @@ function Row({ label, value }: { label: string; value: string }): React.JSX.Elem
 }
 
 export function TranscribePage(): React.JSX.Element {
-  const { wizard, setWizardStep, resetWizard } = useAppStore()
+  const { wizard, settings, setWizardStep, resetWizard } = useAppStore()
 
   const modelInfo = WHISPER_MODELS.find((m) => m.id === wizard.model)
   const modelLabel = modelInfo ? `${modelInfo.name} (${modelInfo.size})` : wizard.model
@@ -68,12 +68,17 @@ export function TranscribePage(): React.JSX.Element {
       : 'None'
 
   const handleAddToQueue = async (): Promise<void> => {
+    const absBaseUrl = settings.absUrl.replace(/\/$/, '')
+
     const jobData = {
       source: wizard.source as 'local' | 'abs',
       title: titleLabel,
       audioFiles:
         wizard.source === 'abs' && wizard.absItem
-          ? wizard.absItem.audioFiles.map((af) => af.metadata.path)
+          ? wizard.absItem.audioFiles.map((af) =>
+              // Use HTTP download URL so queue can fetch regardless of same/remote ABS
+              `${absBaseUrl}/api/items/${wizard.absItem!.id}/file/${af.ino}`
+            )
           : wizard.audioFiles,
       outputPath: wizard.source === 'local' ? wizard.outputFolder : null,
       absItemId: wizard.source === 'abs' && wizard.absItem ? wizard.absItem.id : null,

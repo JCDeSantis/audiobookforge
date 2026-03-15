@@ -103,6 +103,10 @@ async function runNext(): Promise<void> {
   saveAndBroadcast()
 
   try {
+    if (!next.audioFiles || next.audioFiles.length === 0) {
+      throw new Error('No audio files specified for this job')
+    }
+
     // For remote ABS jobs: download audio first
     let audioPaths = next.audioFiles
     if (next.source === 'abs' && next.absItemId) {
