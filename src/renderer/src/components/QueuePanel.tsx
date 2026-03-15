@@ -4,6 +4,19 @@ import { useAppStore } from '../store/useAppStore'
 import { AppSettingsPanel } from './AppSettingsPanel'
 import type { TranscriptionJob } from '../../../shared/types'
 
+function phaseLabel(phase: string | undefined): string {
+  switch (phase) {
+    case 'downloading-binary': return 'Downloading whisper'
+    case 'downloading-model': return 'Downloading model'
+    case 'preparing': return 'Preparing audio'
+    case 'segmenting': return 'Segmenting audio'
+    case 'transcribing': return 'Transcribing'
+    case 'done': return 'Done'
+    case 'error': return 'Error'
+    default: return 'Working…'
+  }
+}
+
 function JobCard({ job }: { job: TranscriptionJob }): React.JSX.Element {
   const { queue } = useAppStore()
   const isActive = job.id === queue.activeJobId
@@ -52,6 +65,14 @@ function JobCard({ job }: { job: TranscriptionJob }): React.JSX.Element {
       {/* Progress bar for running jobs */}
       {isActive && job.progress && (
         <>
+          <div className="mb-0.5 flex items-center justify-between">
+            <span className="text-[9px] text-[#fca5a5]">{phaseLabel(job.progress.phase)}</span>
+            {job.progress.segmentCount != null && job.progress.segmentIndex != null && (
+              <span className="text-[9px] text-[#6b2222]">
+                {job.progress.segmentIndex}/{job.progress.segmentCount}
+              </span>
+            )}
+          </div>
           <div className="h-[3px] overflow-hidden rounded-sm bg-[#080000]">
             <div
               className="h-full rounded-sm bg-[#dc2626] transition-all"
@@ -131,6 +152,13 @@ function StatusBadge({
     return (
       <span className="whitespace-nowrap rounded-[3px] bg-[#7f1d1d] px-1.5 py-0.5 text-[9px] text-[#fca5a5]">
         ▶ {job.progress.percent}%
+      </span>
+    )
+  }
+  if (isActive) {
+    return (
+      <span className="whitespace-nowrap rounded-[3px] bg-[#7f1d1d] px-1.5 py-0.5 text-[9px] text-[#fca5a5]">
+        ▶ Running
       </span>
     )
   }

@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import axios from 'axios'
 import FormData from 'form-data'
 import { createReadStream } from 'fs'
+import { basename } from 'path'
 import { loadApiKey, loadSettings } from './settings.ipc'
 import { IPC } from '../../shared/types'
 import type { AbsLibrary, AbsBook, AbsAudioFile } from '../../shared/types'
@@ -98,17 +99,26 @@ export async function uploadSubtitleToAbs(
   itemId: string,
   srtPath: string
 ): Promise<void> {
+  const url = `${baseUrl}/api/items/${itemId}/upload`
+  const filename = basename(srtPath)
   const form = new FormData()
-  form.append('files', createReadStream(srtPath))
+  form.append('files', createReadStream(srtPath), { filename, contentType: 'text/srt' })
 
-  await axios.post(`${baseUrl}/api/items/${itemId}/upload`, form, {
-    headers: {
-      ...authHeaders(apiKey),
-      ...form.getHeaders()
-    },
-    maxContentLength: Infinity,
-    maxBodyLength: Infinity
-  })
+  try {
+    await axios.post(url, form, {
+      headers: {
+        ...authHeaders(apiKey),
+        ...form.getHeaders()
+      },
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity
+    })
+  } catch (err) {
+    if (axios.isAxiosError(err) && err.response) {
+      throw new Error(`SRT upload failed (HTTP ${err.response.status}) — ${url}`)
+    }
+    throw err
+  }
 }
 
 // ─── IPC registration ─────────────────────────────────────────────────────────
