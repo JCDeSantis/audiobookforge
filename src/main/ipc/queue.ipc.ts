@@ -180,9 +180,25 @@ async function runNext(): Promise<void> {
       const baseUrl = settings.absUrl.replace(/\/$/, '')
       const apiKey = await loadApiKey()
       if (apiKey && baseUrl) {
-        await uploadSubtitleToAbs(baseUrl, apiKey, next.absItemId, srtPath)
+        try {
+          await uploadSubtitleToAbs(baseUrl, apiKey, next.absItemId, srtPath)
+          next.srtPath = null
+        } catch (uploadErr) {
+          const msg = uploadErr instanceof Error ? uploadErr.message : String(uploadErr)
+          if (msg.includes('HTTP 404')) {
+            // ABS version doesn't support /api/items/:id/upload — save locally
+            const srtDir = join(app.getPath('userData'), 'srt')
+            mkdirSync(srtDir, { recursive: true })
+            const dest = join(srtDir, basename(srtPath))
+            copyFileSync(srtPath, dest)
+            next.srtPath = dest
+          } else {
+            throw uploadErr
+          }
+        }
+      } else {
+        next.srtPath = null
       }
-      next.srtPath = null
     } else {
       // Move SRT to output folder
       if (next.outputPath) {

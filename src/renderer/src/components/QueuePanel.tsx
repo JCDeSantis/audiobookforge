@@ -126,7 +126,16 @@ function JobCard({ job }: { job: TranscriptionJob }): React.JSX.Element {
       )}
 
       {/* Done — show path */}
-      {job.status === 'done' && job.srtPath && (
+      {job.status === 'done' && job.srtPath && job.source === 'abs' && (
+        <div
+          className="mt-1 text-[9px] text-[#ca8a04] cursor-pointer hover:underline line-clamp-1"
+          onClick={() => window.electron.files.showInExplorer(job.srtPath!)}
+          title="ABS upload unsupported — update ABS to 2.2+ for auto-upload"
+        >
+          ABS upload failed — {job.srtPath.split(/[\\/]/).pop()}
+        </div>
+      )}
+      {job.status === 'done' && job.srtPath && job.source !== 'abs' && (
         <div
           className="mt-1 text-[9px] text-[#4ade80] cursor-pointer hover:underline line-clamp-1"
           onClick={() => window.electron.files.showInExplorer(job.srtPath!)}
