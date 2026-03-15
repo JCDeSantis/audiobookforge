@@ -1,3 +1,12 @@
+// ─── FFmpeg ───────────────────────────────────────────────────────────────────
+
+export interface ProbeResult {
+  duration: number
+  format: string
+  tags: Record<string, string>
+  hasCoverArt: boolean
+}
+
 // ─── Whisper ────────────────────────────────────────────────────────────────
 
 export type WhisperModel =
@@ -8,6 +17,15 @@ export type WhisperModel =
   | 'large-v2'
   | 'large-v3'
   | 'large-v3-turbo'
+  | 'large-v3-turbo-q5_0'
+
+export interface WhisperModelInfo {
+  id: WhisperModel
+  name: string
+  size: string
+  sizeBytes: number
+  description: string
+}
 
 export interface WhisperProgressEvent {
   jobId: string

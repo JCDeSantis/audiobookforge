@@ -1,3 +1,4 @@
+import React from 'react'
 import { useEffect } from 'react'
 import { useAppStore } from './store/useAppStore'
 import { SourcePage } from './pages/SourcePage'
@@ -6,7 +7,7 @@ import { TranscribePage } from './pages/TranscribePage'
 import { QueuePanel } from './components/QueuePanel'
 import { AbsLibraryModal } from './components/AbsLibraryModal'
 
-export default function App(): JSX.Element {
+export default function App(): React.JSX.Element {
   const { wizard, setJobs, setSettings, absModalOpen } = useAppStore()
 
   // Load settings and queue on mount, subscribe to live queue updates

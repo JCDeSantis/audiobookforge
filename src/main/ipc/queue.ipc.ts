@@ -1,7 +1,8 @@
 import { ipcMain, app } from 'electron'
 import type { BrowserWindow } from 'electron'
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'fs'
-import { join } from 'path'
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, copyFileSync, createWriteStream } from 'fs'
+import { join, basename } from 'path'
+import axios from 'axios'
 import { v4 as uuidv4 } from 'uuid'
 import Epub from 'epub2'
 import { transcribeAudio } from '../whisper/transcribe'
@@ -121,13 +122,11 @@ async function runNext(): Promise<void> {
           if (af.startsWith('http')) {
             const filename = `audio_${downloadedPaths.length}.tmp`
             const dest = join(tempDir, filename)
-            const axios = (await import('axios')).default
             const res = await axios.get(af, {
               responseType: 'stream',
               headers: { Authorization: `Bearer ${apiKey}` }
             })
             await new Promise<void>((resolve, reject) => {
-              const { createWriteStream } = await import('fs')
               const writer = createWriteStream(dest)
               res.data.pipe(writer)
               writer.on('finish', resolve)
@@ -183,8 +182,6 @@ async function runNext(): Promise<void> {
     } else {
       // Move SRT to output folder
       if (next.outputPath) {
-        const { copyFileSync } = await import('fs')
-        const { basename } = await import('path')
         const dest = join(next.outputPath, basename(srtPath))
         copyFileSync(srtPath, dest)
         next.srtPath = dest

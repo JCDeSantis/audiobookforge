@@ -1,4 +1,4 @@
-import type { WhisperModelInfo } from '@shared/types'
+import type { WhisperModelInfo } from '../../../shared/types'
 
 export const WHISPER_MODELS: WhisperModelInfo[] = [
   {

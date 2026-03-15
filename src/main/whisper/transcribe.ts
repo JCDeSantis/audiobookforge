@@ -10,7 +10,7 @@ import { getWhisperExe, isBinaryDownloaded, downloadBinary, isGpuEnabled } from 
 import { getModelPath, getModelUrl, isModelDownloaded, getModelDir } from './models'
 import { getFfmpegPath, sumDurations } from '../ffmpeg/probe'
 import { createTempDir, createConcatListFile, cleanupTempDir } from '../ffmpeg/concat'
-import { parseSilences, buildSegments, offsetSrtContent, mergeSrts, secondsToTimestamp } from './segments'
+import { parseSilences, buildSegments, offsetSrtContent, mergeSrts } from './segments'
 import type { WhisperModel, WhisperProgressEvent } from '../../shared/types'
 
 let activeProcess: ChildProcess | null = null
