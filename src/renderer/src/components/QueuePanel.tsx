@@ -1,8 +1,6 @@
-import React from 'react'
-import { useState } from 'react'
-import { useAppStore } from '../store/useAppStore'
-import { AppSettingsPanel } from './AppSettingsPanel'
+import React, { useState } from 'react'
 import type { TranscriptionJob } from '../../../shared/types'
+import { useAppStore } from '../store/useAppStore'
 
 function phaseLabel(phase: string | undefined): string {
   switch (phase) {
@@ -33,7 +31,65 @@ function getSavedPaths(job: TranscriptionJob): string[] {
   return job.srtPath ? [job.srtPath] : []
 }
 
-function JobCard({ job }: { job: TranscriptionJob }): React.JSX.Element {
+function StatusBadge({
+  job,
+  isActive
+}: {
+  job: TranscriptionJob
+  isActive: boolean
+}): React.JSX.Element {
+  if (isActive && job.progress) {
+    return (
+      <span className="rounded-full bg-[#7f1d1d] px-2.5 py-1 text-[11px] font-medium text-[#ffd7d7]">
+        Running {job.progress.percent}%
+      </span>
+    )
+  }
+
+  if (isActive) {
+    return (
+      <span className="rounded-full bg-[#7f1d1d] px-2.5 py-1 text-[11px] font-medium text-[#ffd7d7]">
+        Running
+      </span>
+    )
+  }
+
+  if (job.status === 'queued') {
+    return (
+      <span className="rounded-full bg-[#281010] px-2.5 py-1 text-[11px] font-medium text-[#e2b3b3]">
+        Queued
+      </span>
+    )
+  }
+
+  if (job.status === 'done') {
+    return (
+      <span className="rounded-full bg-[#183824] px-2.5 py-1 text-[11px] font-medium text-[#9fe0bb]">
+        Done
+      </span>
+    )
+  }
+
+  if (job.status === 'failed') {
+    return (
+      <span className="rounded-full bg-[#401414] px-2.5 py-1 text-[11px] font-medium text-[#ff9f9f]">
+        Failed
+      </span>
+    )
+  }
+
+  if (job.status === 'cancelled') {
+    return (
+      <span className="rounded-full bg-[#281010] px-2.5 py-1 text-[11px] font-medium text-[#d3a8a8]">
+        Cancelled
+      </span>
+    )
+  }
+
+  return <></>
+}
+
+function JobCard({ job, quiet = false }: { job: TranscriptionJob; quiet?: boolean }): React.JSX.Element {
   const { queue } = useAppStore()
   const isActive = job.id === queue.activeJobId
   const savedPaths = getSavedPaths(job)
@@ -68,175 +124,112 @@ function JobCard({ job }: { job: TranscriptionJob }): React.JSX.Element {
   }
 
   return (
-    <div
-      className={`rounded-[6px] border p-2 ${
+    <article
+      className={`rounded-[22px] border px-4 py-3 ${
         isActive
-          ? 'border-[#991b1b] bg-[#120000]'
-          : job.status === 'done'
-            ? 'border-[#2a0000] bg-[#0a0000] opacity-60'
+          ? 'border-[#8f2b2b] bg-[#170909]'
+          : quiet
+            ? 'border-[#2e1515] bg-[#0d0404] opacity-75'
             : job.status === 'failed'
-              ? 'border-[#7f1d1d] bg-[#0d0000]'
-              : 'border-[#2a0000] bg-[#0a0000]'
+              ? 'border-[#5b1f1f] bg-[#130707]'
+              : 'border-[#2f1717] bg-[#100606]'
       }`}
     >
-      <div className="mb-1 flex items-start justify-between gap-1">
-        <span className="max-w-[120px] line-clamp-2 text-[10px] font-semibold leading-tight text-[#fef2f2]">
-          {job.title}
-        </span>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold leading-5 text-[#fff1f1]">{job.title}</div>
+          <div className="mt-1 text-xs text-[#bb9191]">
+            {job.source === 'abs' ? 'AudioBookShelf' : 'Local files'} - {job.model}
+          </div>
+        </div>
         <StatusBadge job={job} isActive={isActive} />
       </div>
 
       {isActive && job.progress && (
-        <>
-          <div className="mb-0.5 flex items-center justify-between">
-            <span className="text-[9px] text-[#fca5a5]">{phaseLabel(job.progress.phase)}</span>
-            {job.progress.segmentCount != null && job.progress.segmentIndex != null && (
-              <span className="text-[9px] text-[#6b2222]">
-                {job.progress.segmentIndex}/{job.progress.segmentCount}
-              </span>
-            )}
+        <div className="mt-3">
+          <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+            <span className="text-[#f0c3c3]">{phaseLabel(job.progress.phase)}</span>
+            <span className="text-[#9d7272]">{job.progress.percent}%</span>
           </div>
-          <div className="h-[3px] overflow-hidden rounded-sm bg-[#080000]">
+          <div className="h-1.5 overflow-hidden rounded-full bg-[#220d0d]">
             <div
-              className="h-full rounded-sm bg-[#dc2626] transition-all"
+              className="h-full rounded-full bg-[#dc2626] transition-all"
               style={{ width: `${job.progress.percent}%` }}
             />
           </div>
           {job.progress.liveText && (
-            <div className="mt-1 line-clamp-1 text-[9px] text-[#6b2222]">
+            <div className="mt-2 line-clamp-2 text-xs leading-5 text-[#b48c8c]">
               {job.progress.liveText}
             </div>
           )}
-        </>
-      )}
-
-      <div className="mt-1 flex items-center justify-between">
-        <span className="text-[9px] text-[#6b2222]">
-          {job.source === 'abs' ? 'ABS' : 'Local'} - {job.model}
-        </span>
-        <div className="flex gap-1">
-          {isActive && (
-            <button
-              className="text-[9px] text-[#6b2222] hover:text-[#fca5a5]"
-              onClick={handleCancel}
-            >
-              Cancel
-            </button>
-          )}
-          {job.status === 'failed' && (
-            <button
-              className="text-[9px] text-[#dc2626] hover:text-[#fca5a5]"
-              onClick={handleRetry}
-            >
-              Retry
-            </button>
-          )}
-          {(job.status === 'done' || job.status === 'failed' || job.status === 'cancelled') && (
-            <button
-              className="text-[9px] text-[#6b2222] hover:text-[#fca5a5]"
-              onClick={handleRemove}
-            >
-              x
-            </button>
-          )}
         </div>
-      </div>
+      )}
 
       {job.status === 'failed' && job.error && (
-        <div className="mt-1 line-clamp-2 text-[9px] text-[#dc2626]">{job.error}</div>
+        <p className="mt-3 text-xs leading-5 text-[#ff9b9b]">{job.error}</p>
       )}
 
-      {job.status === 'done' && savedPaths.length > 0 && job.source === 'abs' && (
-        <div
-          className="mt-1 cursor-pointer line-clamp-1 text-[9px] text-[#ca8a04] hover:underline"
+      {job.status === 'done' && savedPaths.length > 0 && (
+        <button
+          className={`mt-3 text-left text-xs transition-colors hover:underline ${
+            job.source === 'abs' ? 'text-[#f6c76a]' : 'text-[#97d8ad]'
+          }`}
           onClick={handleRevealSaved}
-          title="ABS upload failed, so the subtitle was saved locally."
+          title={
+            job.source === 'abs'
+              ? 'ABS upload failed, so the subtitle was saved locally.'
+              : undefined
+          }
         >
-          ABS upload failed - {savedPaths[0].split(/[\\/]/).pop()}
-        </div>
+          {job.source === 'abs'
+            ? `ABS upload fallback - ${savedPaths[0].split(/[\\/]/).pop()}`
+            : savedPaths.length === 1
+              ? `Saved - ${savedPaths[0].split(/[\\/]/).pop()}`
+              : `Saved - ${savedPaths.length} subtitle files`}
+        </button>
       )}
-      {job.status === 'done' && savedPaths.length > 0 && job.source !== 'abs' && (
-        <div
-          className="mt-1 cursor-pointer line-clamp-1 text-[9px] text-[#4ade80] hover:underline"
-          onClick={handleRevealSaved}
-        >
-          {savedPaths.length === 1
-            ? `Saved -> ${savedPaths[0].split(/[\\/]/).pop()}`
-            : `Saved -> ${savedPaths.length} subtitle files`}
-        </div>
-      )}
+
       {job.status === 'done' && savedPaths.length === 0 && job.source === 'abs' && (
-        <div className="mt-1 text-[9px] text-[#4ade80]">Uploaded to ABS</div>
+        <div className="mt-3 text-xs text-[#97d8ad]">Uploaded to AudioBookShelf</div>
       )}
-    </div>
+
+      <div className="mt-4 flex flex-wrap justify-end gap-2 text-xs">
+        {isActive && (
+          <button
+            className="rounded-full border border-[#5b1f1f] px-3 py-1.5 text-[#f0c7c7] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
+            onClick={handleCancel}
+          >
+            Cancel
+          </button>
+        )}
+        {job.status === 'failed' && (
+          <button
+            className="rounded-full border border-[#7f1d1d] px-3 py-1.5 text-[#ffb4b4] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
+            onClick={handleRetry}
+          >
+            Retry
+          </button>
+        )}
+        {(job.status === 'done' || job.status === 'failed' || job.status === 'cancelled') && (
+          <button
+            className="rounded-full border border-[#3a1919] px-3 py-1.5 text-[#d7b0b0] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
+            onClick={handleRemove}
+          >
+            Remove
+          </button>
+        )}
+      </div>
+    </article>
   )
 }
 
-function StatusBadge({
-  job,
-  isActive
-}: {
-  job: TranscriptionJob
-  isActive: boolean
-}): React.JSX.Element {
-  if (isActive && job.progress) {
-    return (
-      <span className="whitespace-nowrap rounded-[3px] bg-[#7f1d1d] px-1.5 py-0.5 text-[9px] text-[#fca5a5]">
-        Running {job.progress.percent}%
-      </span>
-    )
-  }
-
-  if (isActive) {
-    return (
-      <span className="whitespace-nowrap rounded-[3px] bg-[#7f1d1d] px-1.5 py-0.5 text-[9px] text-[#fca5a5]">
-        Running
-      </span>
-    )
-  }
-
-  if (job.status === 'queued') {
-    return (
-      <span className="whitespace-nowrap rounded-[3px] bg-[#1a0000] px-1.5 py-0.5 text-[9px] text-[#6b2222]">
-        Queued
-      </span>
-    )
-  }
-
-  if (job.status === 'done') {
-    return (
-      <span className="whitespace-nowrap rounded-[3px] bg-[#14532d] px-1.5 py-0.5 text-[9px] text-[#4ade80]">
-        Done
-      </span>
-    )
-  }
-
-  if (job.status === 'failed') {
-    return (
-      <span className="whitespace-nowrap rounded-[3px] bg-[#3f0000] px-1.5 py-0.5 text-[9px] text-[#dc2626]">
-        Failed
-      </span>
-    )
-  }
-
-  if (job.status === 'cancelled') {
-    return (
-      <span className="whitespace-nowrap rounded-[3px] bg-[#1a0000] px-1.5 py-0.5 text-[9px] text-[#6b2222]">
-        Cancelled
-      </span>
-    )
-  }
-
-  return <></>
-}
-
 export function QueuePanel(): React.JSX.Element {
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [finishedOpen, setFinishedOpen] = useState(false)
   const { queue } = useAppStore()
   const { jobs } = queue
 
   const activeJobs = jobs.filter((job) => job.status === 'queued' || job.status === 'running')
-  const hasDone = jobs.some(
+  const finishedJobs = jobs.filter(
     (job) => job.status === 'done' || job.status === 'failed' || job.status === 'cancelled'
   )
 
@@ -245,47 +238,66 @@ export function QueuePanel(): React.JSX.Element {
   }
 
   return (
-    <>
-      <div className="flex w-[230px] flex-shrink-0 flex-col bg-[#060000]">
-        <div className="flex items-center justify-between border-b border-[#2a0000] px-3.5 py-3">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-[#fca5a5]">
-              Queue
-            </span>
-            <span className="rounded-full bg-[#1a0000] px-1.5 py-0.5 text-[10px] text-[#6b2222]">
-              {activeJobs.length}
-            </span>
-          </div>
-          {hasDone && (
-            <button
-              className="text-[9px] text-[#6b2222] hover:text-[#fca5a5]"
-              onClick={handleClearDone}
-            >
-              Clear done
-            </button>
-          )}
+    <aside className="flex w-[320px] flex-shrink-0 flex-col border-l border-[#2f1515] bg-[linear-gradient(180deg,#090303_0%,#050101_100%)]">
+      <div className="border-b border-[#2f1515] px-5 py-5">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#a67777]">
+          Queue
         </div>
-
-        <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto p-2">
-          {jobs.length === 0 && (
-            <div className="mt-4 text-center text-[10px] text-[#3f0000]">No jobs yet</div>
-          )}
-          {jobs.map((job) => (
-            <JobCard key={job.id} job={job} />
-          ))}
-        </div>
-
-        <div className="border-t border-[#2a0000] px-3.5 py-2.5">
-          <button
-            className="text-[10px] text-[#6b2222] transition-colors hover:text-[#fca5a5]"
-            onClick={() => setSettingsOpen(true)}
-          >
-            ABS Connection Settings
-          </button>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <p className="text-sm leading-6 text-[#f7dcdc]">
+            Jobs in motion and recent completions stay here.
+          </p>
+          <span className="rounded-full border border-[#4b2121] bg-[#160909] px-3 py-1 text-xs font-medium text-[#f0c6c6]">
+            {activeJobs.length} active
+          </span>
         </div>
       </div>
 
-      {settingsOpen && <AppSettingsPanel onClose={() => setSettingsOpen(false)} />}
-    </>
+      <div className="flex flex-1 flex-col overflow-y-auto px-4 py-4">
+        <section>
+          <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#9f7171]">
+            Active Jobs
+          </div>
+          {activeJobs.length === 0 ? (
+            <div className="rounded-[22px] border border-dashed border-[#352020] bg-[#0d0505] px-4 py-5 text-sm text-[#9e7474]">
+              No jobs are running right now.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {activeJobs.map((job) => (
+                <JobCard key={job.id} job={job} />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {finishedJobs.length > 0 && (
+          <section className="mt-5 border-t border-[#2a1212] pt-5">
+            <div className="flex items-center justify-between gap-3">
+              <button
+                className="text-sm font-semibold text-[#f2d1d1] transition-colors hover:text-[#fff3f3]"
+                onClick={() => setFinishedOpen((open) => !open)}
+              >
+                Finished ({finishedJobs.length})
+              </button>
+              <button
+                className="text-xs text-[#b98e8e] transition-colors hover:text-[#fff1f1]"
+                onClick={handleClearDone}
+              >
+                Clear done
+              </button>
+            </div>
+
+            {finishedOpen && (
+              <div className="mt-3 space-y-3">
+                {finishedJobs.map((job) => (
+                  <JobCard key={job.id} job={job} quiet />
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+    </aside>
   )
 }
