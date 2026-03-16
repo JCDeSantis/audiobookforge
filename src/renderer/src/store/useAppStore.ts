@@ -8,6 +8,7 @@ import type {
   AbsBookSummary
 } from '../../../shared/types'
 import {
+  clearSelectedSource as clearDraftSource,
   selectAbsItem as applyAbsItemSelection,
   selectLocalFiles as applyLocalFileSelection,
   type JobDraft
@@ -66,6 +67,7 @@ interface AppStore {
   setWizardOutputFolder: (folder: string | null) => void
   selectLocalFiles: (files: string[]) => void
   selectAbsItem: (item: AbsBookSummary) => void
+  clearSelectedSource: () => void
   resetWizard: () => void
 
   // Queue
@@ -126,6 +128,8 @@ export const useAppStore = create<AppStore>((set) => ({
     set((state) => ({ wizard: applyLocalFileSelection(state.wizard, audioFiles) })),
   selectAbsItem: (absItem) =>
     set((state) => ({ wizard: applyAbsItemSelection(state.wizard, absItem) })),
+  clearSelectedSource: () =>
+    set((state) => ({ wizard: clearDraftSource(state.wizard) })),
   resetWizard: () =>
     set((state) => ({
       wizard: { ...defaultWizard, model: state.settings.defaultModel },

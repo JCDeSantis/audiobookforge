@@ -1,4 +1,6 @@
 import '@testing-library/jest-dom/vitest'
+import { cleanup } from '@testing-library/react'
+import { afterEach } from 'vitest'
 
 const defaultElectronMock = {
   settings: {
@@ -53,4 +55,8 @@ Object.defineProperty(window, 'electron', {
   configurable: true,
   writable: true,
   value: defaultElectronMock
+})
+
+afterEach(() => {
+  cleanup()
 })

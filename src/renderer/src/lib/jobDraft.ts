@@ -29,6 +29,17 @@ export function selectAbsItem(draft: JobDraft, absItem: AbsBookSummary): JobDraf
   }
 }
 
+export function clearSelectedSource(draft: JobDraft): JobDraft {
+  return {
+    ...draft,
+    source: null,
+    audioFiles: [],
+    absItem: null,
+    epubPath: null,
+    outputFolder: null
+  }
+}
+
 export function canContinue(draft: JobDraft): boolean {
   if (draft.source === 'local') {
     return draft.audioFiles.length > 0 && Boolean(draft.outputFolder)
