@@ -1,6 +1,8 @@
 import React from 'react'
 import { useState } from 'react'
 import { useAppStore } from '../store/useAppStore'
+import { WHISPER_MODELS } from '../lib/whisperModels'
+import type { WhisperModel } from '../../../shared/types'
 
 interface AppSettingsPanelProps {
   onClose: () => void
@@ -10,6 +12,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
   const { settings, setSettings } = useAppStore()
   const [url, setUrl] = useState(settings.absUrl)
   const [apiKey, setApiKey] = useState('')
+  const [defaultModel, setDefaultModel] = useState<WhisperModel>(settings.defaultModel)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<'idle' | 'ok' | 'fail'>('idle')
   const [saving, setSaving] = useState(false)
@@ -32,10 +35,11 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     setSaving(true)
     try {
       await window.electron.settings.setUrl(url)
+      await window.electron.settings.setDefaultModel(defaultModel)
       if (apiKey) {
         await window.electron.settings.setApiKey(apiKey)
       }
-      setSettings({ ...settings, absUrl: url })
+      setSettings({ ...settings, absUrl: url, defaultModel })
       onClose()
     } catch (e) {
       console.error('Failed to save settings', e)
@@ -92,6 +96,21 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
             <span className="text-[10px] text-[#6b2222]">
               Stored securely in OS credential store (never written to disk as plaintext)
             </span>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-semibold text-[#fca5a5]">Default Whisper Model</label>
+            <select
+              className="rounded border border-[#3f0000] bg-[#0d0000] px-3 py-2 text-[11px] text-[#fef2f2] focus:border-[#dc2626] focus:outline-none"
+              value={defaultModel}
+              onChange={(e) => setDefaultModel(e.target.value as WhisperModel)}
+            >
+              {WHISPER_MODELS.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name} ({model.size})
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Test connection */}

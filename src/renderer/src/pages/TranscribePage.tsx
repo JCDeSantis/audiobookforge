@@ -1,6 +1,7 @@
 import React from 'react'
 import { useAppStore } from '../store/useAppStore'
 import { WHISPER_MODELS } from '../lib/whisperModels'
+import { getLocalSourceTitle } from '../lib/sourceTitle'
 
 function StepIndicator({ current }: { current: 1 | 2 | 3 }): React.JSX.Element {
   const steps: Array<{ n: 1 | 2 | 3; label: string }> = [
@@ -49,9 +50,7 @@ export function TranscribePage(): React.JSX.Element {
   const titleLabel =
     wizard.source === 'abs' && wizard.absItem
       ? wizard.absItem.title
-      : wizard.audioFiles.length === 1
-        ? (wizard.audioFiles[0].split(/[\\/]/).pop() ?? wizard.audioFiles[0])
-        : `${wizard.audioFiles.length} files`
+      : getLocalSourceTitle(wizard.audioFiles)
 
   const sourceLabel = wizard.source === 'abs' ? 'AudioBookShelf' : 'Local file(s)'
 

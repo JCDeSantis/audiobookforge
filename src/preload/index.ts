@@ -5,7 +5,8 @@ const electron = {
   settings: {
     get: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
     setUrl: (url: string) => ipcRenderer.invoke(IPC.SETTINGS_SET_URL, url),
-    setApiKey: (key: string) => ipcRenderer.invoke(IPC.SETTINGS_SET_API_KEY, key)
+    setApiKey: (key: string) => ipcRenderer.invoke(IPC.SETTINGS_SET_API_KEY, key),
+    setDefaultModel: (model: string) => ipcRenderer.invoke(IPC.SETTINGS_SET_DEFAULT_MODEL, model)
   },
 
   files: {

@@ -83,7 +83,14 @@ interface AppStore {
 export const useAppStore = create<AppStore>((set) => ({
   // Settings
   settings: { absUrl: '', defaultModel: 'large-v3-turbo' },
-  setSettings: (s) => set({ settings: s }),
+  setSettings: (s) =>
+    set((state) => ({
+      settings: s,
+      wizard:
+        state.wizard.source === null && state.wizard.step === 1
+          ? { ...state.wizard, model: s.defaultModel }
+          : state.wizard
+    })),
 
   // Wizard
   wizard: defaultWizard,
@@ -98,7 +105,8 @@ export const useAppStore = create<AppStore>((set) => ({
   setWizardModel: (model) => set((state) => ({ wizard: { ...state.wizard, model } })),
   setWizardOutputFolder: (outputFolder) =>
     set((state) => ({ wizard: { ...state.wizard, outputFolder } })),
-  resetWizard: () => set({ wizard: defaultWizard }),
+  resetWizard: () =>
+    set((state) => ({ wizard: { ...defaultWizard, model: state.settings.defaultModel } })),
 
   // Queue
   queue: { jobs: [], activeJobId: null },

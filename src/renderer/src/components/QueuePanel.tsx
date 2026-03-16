@@ -6,27 +6,43 @@ import type { TranscriptionJob } from '../../../shared/types'
 
 function phaseLabel(phase: string | undefined): string {
   switch (phase) {
-    case 'downloading-binary': return 'Downloading whisper'
-    case 'downloading-model': return 'Downloading model'
-    case 'preparing': return 'Preparing audio'
-    case 'segmenting': return 'Segmenting audio'
-    case 'transcribing': return 'Transcribing'
-    case 'done': return 'Done'
-    case 'error': return 'Error'
-    default: return 'Working…'
+    case 'downloading-binary':
+      return 'Downloading whisper'
+    case 'downloading-model':
+      return 'Downloading model'
+    case 'preparing':
+      return 'Preparing audio'
+    case 'segmenting':
+      return 'Segmenting audio'
+    case 'transcribing':
+      return 'Transcribing'
+    case 'done':
+      return 'Done'
+    case 'error':
+      return 'Error'
+    default:
+      return 'Working...'
   }
+}
+
+function getSavedPaths(job: TranscriptionJob): string[] {
+  if (job.srtPaths.length > 0) {
+    return job.srtPaths
+  }
+
+  return job.srtPath ? [job.srtPath] : []
 }
 
 function JobCard({ job }: { job: TranscriptionJob }): React.JSX.Element {
   const { queue } = useAppStore()
   const isActive = job.id === queue.activeJobId
+  const savedPaths = getSavedPaths(job)
 
   const handleCancel = (): void => {
     window.electron.queue.cancel(job.id)
   }
 
   const handleRetry = async (): Promise<void> => {
-    // Re-queue the job with same parameters
     await window.electron.queue.add({
       source: job.source,
       title: job.title,
@@ -45,27 +61,31 @@ function JobCard({ job }: { job: TranscriptionJob }): React.JSX.Element {
     window.electron.queue.remove(job.id)
   }
 
+  const handleRevealSaved = (): void => {
+    if (savedPaths.length > 0) {
+      window.electron.files.showInExplorer(savedPaths[0])
+    }
+  }
+
   return (
     <div
       className={`rounded-[6px] border p-2 ${
         isActive
           ? 'border-[#991b1b] bg-[#120000]'
           : job.status === 'done'
-          ? 'border-[#2a0000] bg-[#0a0000] opacity-60'
-          : job.status === 'failed'
-          ? 'border-[#7f1d1d] bg-[#0d0000]'
-          : 'border-[#2a0000] bg-[#0a0000]'
+            ? 'border-[#2a0000] bg-[#0a0000] opacity-60'
+            : job.status === 'failed'
+              ? 'border-[#7f1d1d] bg-[#0d0000]'
+              : 'border-[#2a0000] bg-[#0a0000]'
       }`}
     >
-      {/* Header row */}
-      <div className="flex items-start justify-between gap-1 mb-1">
-        <span className="text-[10px] font-semibold leading-tight text-[#fef2f2] max-w-[120px] line-clamp-2">
+      <div className="mb-1 flex items-start justify-between gap-1">
+        <span className="max-w-[120px] line-clamp-2 text-[10px] font-semibold leading-tight text-[#fef2f2]">
           {job.title}
         </span>
         <StatusBadge job={job} isActive={isActive} />
       </div>
 
-      {/* Progress bar for running jobs */}
       {isActive && job.progress && (
         <>
           <div className="mb-0.5 flex items-center justify-between">
@@ -83,17 +103,16 @@ function JobCard({ job }: { job: TranscriptionJob }): React.JSX.Element {
             />
           </div>
           {job.progress.liveText && (
-            <div className="mt-1 text-[9px] text-[#6b2222] line-clamp-1">
+            <div className="mt-1 line-clamp-1 text-[9px] text-[#6b2222]">
               {job.progress.liveText}
             </div>
           )}
         </>
       )}
 
-      {/* Meta row */}
       <div className="mt-1 flex items-center justify-between">
         <span className="text-[9px] text-[#6b2222]">
-          {job.source === 'abs' ? 'ABS' : 'Local'} · {job.model}
+          {job.source === 'abs' ? 'ABS' : 'Local'} - {job.model}
         </span>
         <div className="flex gap-1">
           {isActive && (
@@ -117,36 +136,36 @@ function JobCard({ job }: { job: TranscriptionJob }): React.JSX.Element {
               className="text-[9px] text-[#6b2222] hover:text-[#fca5a5]"
               onClick={handleRemove}
             >
-              ✕
+              x
             </button>
           )}
         </div>
       </div>
 
-      {/* Error message */}
       {job.status === 'failed' && job.error && (
-        <div className="mt-1 text-[9px] text-[#dc2626] line-clamp-2">{job.error}</div>
+        <div className="mt-1 line-clamp-2 text-[9px] text-[#dc2626]">{job.error}</div>
       )}
 
-      {/* Done — show path */}
-      {job.status === 'done' && job.srtPath && job.source === 'abs' && (
+      {job.status === 'done' && savedPaths.length > 0 && job.source === 'abs' && (
         <div
-          className="mt-1 text-[9px] text-[#ca8a04] cursor-pointer hover:underline line-clamp-1"
-          onClick={() => window.electron.files.showInExplorer(job.srtPath!)}
-          title="ABS upload unsupported — update ABS to 2.2+ for auto-upload"
+          className="mt-1 cursor-pointer line-clamp-1 text-[9px] text-[#ca8a04] hover:underline"
+          onClick={handleRevealSaved}
+          title="ABS upload failed, so the subtitle was saved locally."
         >
-          ABS upload failed — {job.srtPath.split(/[\\/]/).pop()}
+          ABS upload failed - {savedPaths[0].split(/[\\/]/).pop()}
         </div>
       )}
-      {job.status === 'done' && job.srtPath && job.source !== 'abs' && (
+      {job.status === 'done' && savedPaths.length > 0 && job.source !== 'abs' && (
         <div
-          className="mt-1 text-[9px] text-[#4ade80] cursor-pointer hover:underline line-clamp-1"
-          onClick={() => window.electron.files.showInExplorer(job.srtPath!)}
+          className="mt-1 cursor-pointer line-clamp-1 text-[9px] text-[#4ade80] hover:underline"
+          onClick={handleRevealSaved}
         >
-          Saved → {job.srtPath.split(/[\\/]/).pop()}
+          {savedPaths.length === 1
+            ? `Saved -> ${savedPaths[0].split(/[\\/]/).pop()}`
+            : `Saved -> ${savedPaths.length} subtitle files`}
         </div>
       )}
-      {job.status === 'done' && !job.srtPath && job.source === 'abs' && (
+      {job.status === 'done' && savedPaths.length === 0 && job.source === 'abs' && (
         <div className="mt-1 text-[9px] text-[#4ade80]">Uploaded to ABS</div>
       )}
     </div>
@@ -163,45 +182,51 @@ function StatusBadge({
   if (isActive && job.progress) {
     return (
       <span className="whitespace-nowrap rounded-[3px] bg-[#7f1d1d] px-1.5 py-0.5 text-[9px] text-[#fca5a5]">
-        ▶ {job.progress.percent}%
+        Running {job.progress.percent}%
       </span>
     )
   }
+
   if (isActive) {
     return (
       <span className="whitespace-nowrap rounded-[3px] bg-[#7f1d1d] px-1.5 py-0.5 text-[9px] text-[#fca5a5]">
-        ▶ Running
+        Running
       </span>
     )
   }
+
   if (job.status === 'queued') {
     return (
       <span className="whitespace-nowrap rounded-[3px] bg-[#1a0000] px-1.5 py-0.5 text-[9px] text-[#6b2222]">
-        ⏳ Queued
+        Queued
       </span>
     )
   }
+
   if (job.status === 'done') {
     return (
       <span className="whitespace-nowrap rounded-[3px] bg-[#14532d] px-1.5 py-0.5 text-[9px] text-[#4ade80]">
-        ✓ Done
+        Done
       </span>
     )
   }
+
   if (job.status === 'failed') {
     return (
       <span className="whitespace-nowrap rounded-[3px] bg-[#3f0000] px-1.5 py-0.5 text-[9px] text-[#dc2626]">
-        ✗ Failed
+        Failed
       </span>
     )
   }
+
   if (job.status === 'cancelled') {
     return (
       <span className="whitespace-nowrap rounded-[3px] bg-[#1a0000] px-1.5 py-0.5 text-[9px] text-[#6b2222]">
-        — Cancelled
+        Cancelled
       </span>
     )
   }
+
   return <></>
 }
 
@@ -210,9 +235,9 @@ export function QueuePanel(): React.JSX.Element {
   const { queue } = useAppStore()
   const { jobs } = queue
 
-  const activeJobs = jobs.filter((j) => j.status === 'queued' || j.status === 'running')
+  const activeJobs = jobs.filter((job) => job.status === 'queued' || job.status === 'running')
   const hasDone = jobs.some(
-    (j) => j.status === 'done' || j.status === 'failed' || j.status === 'cancelled'
+    (job) => job.status === 'done' || job.status === 'failed' || job.status === 'cancelled'
   )
 
   const handleClearDone = (): void => {
@@ -222,7 +247,6 @@ export function QueuePanel(): React.JSX.Element {
   return (
     <>
       <div className="flex w-[230px] flex-shrink-0 flex-col bg-[#060000]">
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-[#2a0000] px-3.5 py-3">
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-semibold uppercase tracking-[0.05em] text-[#fca5a5]">
@@ -242,7 +266,6 @@ export function QueuePanel(): React.JSX.Element {
           )}
         </div>
 
-        {/* Job list */}
         <div className="flex flex-1 flex-col gap-1.5 overflow-y-auto p-2">
           {jobs.length === 0 && (
             <div className="mt-4 text-center text-[10px] text-[#3f0000]">No jobs yet</div>
@@ -252,19 +275,16 @@ export function QueuePanel(): React.JSX.Element {
           ))}
         </div>
 
-        {/* Footer */}
         <div className="border-t border-[#2a0000] px-3.5 py-2.5">
           <button
-            className="flex items-center gap-1.5 text-[10px] text-[#6b2222] hover:text-[#fca5a5] transition-colors"
+            className="text-[10px] text-[#6b2222] transition-colors hover:text-[#fca5a5]"
             onClick={() => setSettingsOpen(true)}
           >
-            <span>⚙</span>
-            <span>ABS Connection Settings</span>
+            ABS Connection Settings
           </button>
         </div>
       </div>
 
-      {/* AppSettingsPanel overlay */}
       {settingsOpen && <AppSettingsPanel onClose={() => setSettingsOpen(false)} />}
     </>
   )

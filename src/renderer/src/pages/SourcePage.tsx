@@ -1,6 +1,7 @@
 import React from 'react'
 import { useCallback } from 'react'
 import { useAppStore } from '../store/useAppStore'
+import { getLocalSourceTitle } from '../lib/sourceTitle'
 
 function StepIndicator({ current }: { current: 1 | 2 | 3 }): React.JSX.Element {
   const steps: Array<{ n: 1 | 2 | 3; label: string }> = [
@@ -77,10 +78,7 @@ export function SourcePage(): React.JSX.Element {
       return `${wizard.absItem.title} — ${wizard.absItem.authorName}`
     }
     if (wizard.source === 'local' && wizard.audioFiles.length > 0) {
-      if (wizard.audioFiles.length === 1) {
-        return wizard.audioFiles[0].split(/[\\/]/).pop() ?? wizard.audioFiles[0]
-      }
-      return `${wizard.audioFiles.length} files selected`
+      return getLocalSourceTitle(wizard.audioFiles)
     }
     return ''
   }

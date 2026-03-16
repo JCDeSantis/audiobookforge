@@ -14,6 +14,8 @@ import axios from 'axios'
 import { v4 as uuidv4 } from 'uuid'
 import Epub from 'epub2'
 import { cancelTranscription, transcribeAudio } from '../whisper/transcribe'
+import { probeFile } from '../ffmpeg/probe'
+import { splitSrtByDurations } from '../whisper/segments'
 import { uploadSubtitleToAbs } from './abs.ipc'
 import { loadApiKey, loadSettings } from './settings.ipc'
 import { IPC } from '../../shared/types'
@@ -28,7 +30,16 @@ function getQueuePath(): string {
 export function loadQueue(): TranscriptionJob[] {
   try {
     const raw = readFileSync(getQueuePath(), 'utf-8')
-    return JSON.parse(raw) as TranscriptionJob[]
+    const parsed = JSON.parse(raw) as Array<Partial<TranscriptionJob>>
+    return parsed.map((job) => ({
+      ...job,
+      srtPath: job.srtPath ?? null,
+      srtPaths: Array.isArray(job.srtPaths)
+        ? job.srtPaths.filter((path): path is string => typeof path === 'string' && path.length > 0)
+        : job.srtPath
+          ? [job.srtPath]
+          : []
+    })) as TranscriptionJob[]
   } catch {
     return []
   }
@@ -88,7 +99,7 @@ function sanitizeFileNamePart(value: string): string {
 }
 
 function getJobSrtFileName(job: TranscriptionJob): string {
-  if (job.source === 'local' && job.audioFiles.length > 0) {
+  if (job.source === 'local' && job.audioFiles.length === 1) {
     const firstAudio = basename(job.audioFiles[0], extname(job.audioFiles[0]))
     return `${sanitizeFileNamePart(firstAudio)}.srt`
   }
@@ -107,6 +118,31 @@ function relocateSrtToDir(sourcePath: string, destDir: string, destFileName?: st
   copyFileSync(sourcePath, dest)
   rmSync(sourcePath, { force: true })
   return dest
+}
+
+async function saveMultipartLocalSrts(
+  sourceSrtPath: string,
+  audioFiles: string[],
+  outputDir: string
+): Promise<string[]> {
+  mkdirSync(outputDir, { recursive: true })
+
+  const mergedSrt = readFileSync(sourceSrtPath, 'utf-8')
+  const probeResults = await Promise.all(audioFiles.map((audioFile) => probeFile(audioFile)))
+  const splitSrts = splitSrtByDurations(
+    mergedSrt,
+    probeResults.map((result) => result.duration)
+  )
+
+  const savedPaths = audioFiles.map((audioFile, index) => {
+    const baseName = basename(audioFile, extname(audioFile))
+    const destPath = join(outputDir, `${sanitizeFileNamePart(baseName)}.srt`)
+    writeFileSync(destPath, splitSrts[index] ?? '', 'utf-8')
+    return destPath
+  })
+
+  rmSync(sourceSrtPath, { force: true })
+  return savedPaths
 }
 
 // ─── EPUB vocab extraction ────────────────────────────────────────────────────
@@ -141,6 +177,9 @@ async function runNext(): Promise<void> {
   cancelRequested = false
   next.status = 'running'
   next.progress = null
+  next.error = null
+  next.srtPath = null
+  next.srtPaths = []
   saveAndBroadcast()
 
   try {
@@ -262,6 +301,7 @@ async function runNext(): Promise<void> {
           await uploadSubtitleToAbs(baseUrl, apiKey, next.absItemId, srtPath)
           rmSync(srtPath, { force: true })
           next.srtPath = null
+          next.srtPaths = []
         } catch {
           // Upload failed — save locally so the SRT isn't lost
           next.srtPath = relocateSrtToDir(
@@ -269,6 +309,7 @@ async function runNext(): Promise<void> {
             join(app.getPath('userData'), 'srt'),
             getJobSrtFileName(next)
           )
+          next.srtPaths = next.srtPath ? [next.srtPath] : []
         }
       } else {
         next.srtPath = relocateSrtToDir(
@@ -276,13 +317,21 @@ async function runNext(): Promise<void> {
           join(app.getPath('userData'), 'srt'),
           getJobSrtFileName(next)
         )
+        next.srtPaths = next.srtPath ? [next.srtPath] : []
       }
     } else {
       // Move SRT to output folder
       if (next.outputPath) {
-        next.srtPath = relocateSrtToDir(srtPath, next.outputPath, getJobSrtFileName(next))
+        if (next.audioFiles.length > 1) {
+          next.srtPaths = await saveMultipartLocalSrts(srtPath, next.audioFiles, next.outputPath)
+          next.srtPath = next.srtPaths[0] ?? null
+        } else {
+          next.srtPath = relocateSrtToDir(srtPath, next.outputPath, getJobSrtFileName(next))
+          next.srtPaths = next.srtPath ? [next.srtPath] : []
+        }
       } else {
         next.srtPath = srtPath
+        next.srtPaths = [srtPath]
       }
     }
 
@@ -334,7 +383,7 @@ export function registerQueueIpc(browserWindow: BrowserWindow): void {
       _event,
       jobData: Omit<
         TranscriptionJob,
-        'id' | 'status' | 'progress' | 'srtPath' | 'error' | 'createdAt' | 'completedAt'
+        'id' | 'status' | 'progress' | 'srtPath' | 'srtPaths' | 'error' | 'createdAt' | 'completedAt'
       >
     ) => {
       const job: TranscriptionJob = {
@@ -343,6 +392,7 @@ export function registerQueueIpc(browserWindow: BrowserWindow): void {
         status: 'queued',
         progress: null,
         srtPath: null,
+        srtPaths: [],
         error: null,
         createdAt: Date.now(),
         completedAt: null

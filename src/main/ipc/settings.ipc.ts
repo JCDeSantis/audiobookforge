@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import keytar from 'keytar'
 import { IPC } from '../../shared/types'
-import type { AppSettings } from '../../shared/types'
+import type { AppSettings, WhisperModel } from '../../shared/types'
 
 const SERVICE = 'audiobookforge'
 const ACCOUNT = 'abs-api-key'
@@ -15,7 +15,11 @@ function getSettingsPath(): string {
 export function loadSettings(): AppSettings {
   try {
     const raw = readFileSync(getSettingsPath(), 'utf-8')
-    return JSON.parse(raw) as AppSettings
+    const parsed = JSON.parse(raw) as Partial<AppSettings>
+    return {
+      absUrl: parsed.absUrl ?? '',
+      defaultModel: parsed.defaultModel ?? 'large-v3-turbo'
+    }
   } catch {
     return { absUrl: '', defaultModel: 'large-v3-turbo' }
   }
@@ -47,5 +51,11 @@ export function registerSettingsIpc(): void {
 
   ipcMain.handle(IPC.SETTINGS_SET_API_KEY, async (_event, key: string) => {
     await saveApiKey(key)
+  })
+
+  ipcMain.handle(IPC.SETTINGS_SET_DEFAULT_MODEL, (_event, model: WhisperModel) => {
+    const settings = loadSettings()
+    settings.defaultModel = model
+    saveSettings(settings)
   })
 }

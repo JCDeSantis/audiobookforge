@@ -63,6 +63,7 @@ export interface TranscriptionJob {
   model: WhisperModel
   progress: WhisperProgressEvent | null
   srtPath: string | null // temp path during/after transcription
+  srtPaths: string[] // all saved subtitle paths for completed local fallback/output jobs
   error: string | null
   createdAt: number
   completedAt: number | null
@@ -157,5 +158,6 @@ export const IPC = {
   // Settings
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET_URL: 'settings:set-url',
-  SETTINGS_SET_API_KEY: 'settings:set-api-key'
+  SETTINGS_SET_API_KEY: 'settings:set-api-key',
+  SETTINGS_SET_DEFAULT_MODEL: 'settings:set-default-model'
 } as const
