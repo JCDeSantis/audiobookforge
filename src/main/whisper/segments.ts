@@ -9,6 +9,12 @@ export interface AudioSegment {
   durationSec: number
 }
 
+export interface SubtitleCue {
+  startSec: number
+  endSec: number
+  text: string
+}
+
 /**
  * Parse silence_start / silence_end lines from ffmpeg silencedetect stderr.
  */
@@ -150,6 +156,90 @@ export function mergeSrts(srtContents: string[]): string {
   return outputBlocks.join('\n\n') + '\n'
 }
 
+export function parseSrtContent(srtContent: string): SubtitleCue[] {
+  const blocks = srtContent.replace(/\r/g, '').trim().split(/\n\s*\n/)
+  const cues: SubtitleCue[] = []
+
+  for (const block of blocks) {
+    const lines = block
+      .split('\n')
+      .map((line) => line.trimEnd())
+      .filter((line) => line.length > 0)
+
+    if (lines.length < 2) continue
+
+    const timestampIndex = lines.findIndex((line) =>
+      /^\d{2}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2}:\d{2}:\d{2},\d{3}$/.test(line)
+    )
+    if (timestampIndex === -1 || timestampIndex === lines.length - 1) continue
+
+    const match = lines[timestampIndex].match(
+      /^(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2},\d{3})$/
+    )
+    if (!match) continue
+
+    const startSec = parseTimestamp(match[1])
+    const endSec = parseTimestamp(match[2])
+    const text = lines.slice(timestampIndex + 1).join('\n').trim()
+
+    if (!text || endSec <= startSec) continue
+
+    cues.push({ startSec, endSec, text })
+  }
+
+  return cues
+}
+
+export function serializeSrtCues(cues: SubtitleCue[]): string {
+  if (cues.length === 0) return ''
+
+  return (
+    cues
+      .map(
+        (cue, index) =>
+          `${index + 1}\n${fromSec(cue.startSec)} --> ${fromSec(cue.endSec)}\n${cue.text}`
+      )
+      .join('\n\n') + '\n'
+  )
+}
+
+export function splitSrtByDurations(srtContent: string, partDurations: number[]): string[] {
+  if (partDurations.length === 0) return []
+
+  const cues = parseSrtContent(srtContent)
+  const normalizedDurations = partDurations.map((duration) => Math.max(0, duration))
+  const partStarts: number[] = []
+  let cursor = 0
+
+  for (const duration of normalizedDurations) {
+    partStarts.push(cursor)
+    cursor += duration
+  }
+
+  const partCues = normalizedDurations.map<SubtitleCue[]>(() => [])
+
+  for (const cue of cues) {
+    for (let index = 0; index < normalizedDurations.length; index++) {
+      const partStart = partStarts[index]
+      const partEnd = partStart + normalizedDurations[index]
+      const overlapStart = Math.max(cue.startSec, partStart)
+      const overlapEnd = Math.min(cue.endSec, partEnd)
+
+      if (overlapEnd <= overlapStart) {
+        continue
+      }
+
+      partCues[index].push({
+        startSec: overlapStart - partStart,
+        endSec: overlapEnd - partStart,
+        text: cue.text
+      })
+    }
+  }
+
+  return partCues.map((cuesForPart) => serializeSrtCues(cuesForPart))
+}
+
 /**
  * Convert a total-seconds value to the HH:MM:SS format used for segmentTimestamp.
  */
@@ -158,4 +248,10 @@ export function secondsToTimestamp(totalSec: number): string {
   const min = Math.floor(totalSec / 60) % 60
   const hr = Math.floor(totalSec / 3600)
   return `${p2(hr)}:${p2(min)}:${p2(sec)}`
+}
+
+function parseTimestamp(timestamp: string): number {
+  const match = timestamp.match(/^(\d{2}):(\d{2}):(\d{2}),(\d{3})$/)
+  if (!match) return 0
+  return toSec(match[1], match[2], match[3], match[4])
 }

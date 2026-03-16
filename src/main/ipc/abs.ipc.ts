@@ -1,13 +1,12 @@
 import { ipcMain } from 'electron'
 import axios from 'axios'
 import FormData from 'form-data'
-import { createReadStream } from 'fs'
+import { readFileSync } from 'fs'
 import { basename, extname } from 'path'
 import { loadApiKey, loadSettings } from './settings.ipc'
+import { splitSrtByDurations } from '../whisper/segments'
 import { IPC } from '../../shared/types'
 import type { AbsLibrary, AbsBook, AbsAudioFile } from '../../shared/types'
-
-// ─── Internal ABS API shapes ─────────────────────────────────────────────────
 
 interface AbsApiLibrary {
   id: string
@@ -52,8 +51,6 @@ interface AbsApiItem {
     tracks?: AbsApiTrack[]
   }
 }
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function getBaseUrlAndKey(): Promise<{ baseUrl: string; apiKey: string }> {
   const settings = loadSettings()
@@ -101,24 +98,25 @@ export function mapAbsItemToBook(item: AbsApiItem, baseUrl: string): AbsBook {
     }
   }
 
-  const audioFiles: AbsAudioFile[] = (media.audioFiles ?? []).map((f) => ({
-    index: f.index,
-    ino: f.ino,
-    contentUrl:
-      trackContentUrlByPath.get(f.metadata.path) ?? trackContentUrlByIndex.get(f.index) ?? null,
-    metadata: f.metadata,
-    duration: f.duration,
-    mimeType: f.mimeType,
-    addedAt: f.addedAt,
-    updatedAt: f.updatedAt
-  }))
+  const audioFiles: AbsAudioFile[] = [...(media.audioFiles ?? [])]
+    .sort((a, b) => a.index - b.index)
+    .map((file) => ({
+      index: file.index,
+      ino: file.ino,
+      contentUrl:
+        trackContentUrlByPath.get(file.metadata.path) ??
+        trackContentUrlByIndex.get(file.index) ??
+        null,
+      metadata: file.metadata,
+      duration: file.duration,
+      mimeType: file.mimeType,
+      addedAt: file.addedAt,
+      updatedAt: file.updatedAt
+    }))
 
   const hasSubtitles = (item.libraryFiles ?? []).some(isSubtitleFile)
-
   const coverPath = media.coverPath ? `${baseUrl}/api/items/${item.id}/cover` : null
-
-  const ebookFile = media.ebookFile
-  const ebookPath = ebookFile?.metadata?.path ?? null
+  const ebookPath = media.ebookFile?.metadata?.path ?? null
 
   return {
     id: item.id,
@@ -204,11 +202,73 @@ function getUploadFields(book: AbsBook): {
   }
 }
 
-function getSubtitleFileName(book: AbsBook): string {
-  const firstAudioName = book.audioFiles[0]?.metadata?.filename
-  const baseName = firstAudioName ? basename(firstAudioName, extname(firstAudioName)) : book.title
+function getAudioSubtitleFileName(audioFile: AbsAudioFile | undefined, fallbackTitle: string): string {
+  const baseName = audioFile?.metadata?.filename
+    ? basename(audioFile.metadata.filename, extname(audioFile.metadata.filename))
+    : fallbackTitle
 
   return `${sanitizeFileNamePart(baseName)}.srt`
+}
+
+function buildSubtitleUploads(
+  book: AbsBook,
+  mergedSrt: string,
+  fallbackTitle: string
+): Array<{ filename: string; content: string }> {
+  const orderedAudioFiles = [...book.audioFiles].sort((a, b) => a.index - b.index)
+
+  if (orderedAudioFiles.length <= 1) {
+    return [
+      {
+        filename: getAudioSubtitleFileName(orderedAudioFiles[0], fallbackTitle),
+        content: mergedSrt
+      }
+    ]
+  }
+
+  const splitSrts = splitSrtByDurations(
+    mergedSrt,
+    orderedAudioFiles.map((audioFile) => audioFile.duration)
+  )
+
+  return orderedAudioFiles
+    .map((audioFile, index) => ({
+      filename: getAudioSubtitleFileName(audioFile, fallbackTitle),
+      content: splitSrts[index] ?? ''
+    }))
+    .filter((upload) => upload.content.trim().length > 0)
+}
+
+async function postSubtitleUpload(
+  url: string,
+  apiKey: string,
+  uploadFields: ReturnType<typeof getUploadFields>,
+  filename: string,
+  content: string
+): Promise<void> {
+  const form = new FormData()
+  form.append('library', uploadFields.libraryId)
+  form.append('folder', uploadFields.folderId)
+  form.append('title', uploadFields.title)
+  if (uploadFields.author) {
+    form.append('author', uploadFields.author)
+  }
+  if (uploadFields.series) {
+    form.append('series', uploadFields.series)
+  }
+  form.append('0', Buffer.from(content, 'utf-8'), {
+    filename,
+    contentType: 'application/x-subrip'
+  })
+
+  await axios.post(url, form, {
+    headers: {
+      ...authHeaders(apiKey),
+      ...form.getHeaders()
+    },
+    maxContentLength: Infinity,
+    maxBodyLength: Infinity
+  })
 }
 
 export async function uploadSubtitleToAbs(
@@ -220,44 +280,30 @@ export async function uploadSubtitleToAbs(
   const book = await fetchAbsBook(baseUrl, apiKey, itemId)
   const uploadFields = getUploadFields(book)
   const url = `${baseUrl}/api/upload`
-  const filename = getSubtitleFileName(book)
-  const form = new FormData()
-  // ABS v2.32.1 exposes /api/upload for library-folder uploads; we target the item's folder.
-  form.append('library', uploadFields.libraryId)
-  form.append('folder', uploadFields.folderId)
-  form.append('title', uploadFields.title)
-  if (uploadFields.author) {
-    form.append('author', uploadFields.author)
+  const mergedSrt = readFileSync(srtPath, 'utf-8')
+  const uploads = buildSubtitleUploads(book, mergedSrt, uploadFields.title || book.title)
+
+  if (uploads.length === 0) {
+    throw new Error('No subtitle text was available to upload to ABS.')
   }
-  if (uploadFields.series) {
-    form.append('series', uploadFields.series)
-  }
-  form.append('0', createReadStream(srtPath), { filename, contentType: 'application/x-subrip' })
 
   try {
-    await axios.post(url, form, {
-      headers: {
-        ...authHeaders(apiKey),
-        ...form.getHeaders()
-      },
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity
-    })
-    // Trigger item rescan so ABS detects the new SRT in its folder
+    for (const upload of uploads) {
+      await postSubtitleUpload(url, apiKey, uploadFields, upload.filename, upload.content)
+    }
+
     await axios.post(`${baseUrl}/api/items/${itemId}/scan`, null, {
       headers: authHeaders(apiKey)
     })
   } catch (err) {
     if (axios.isAxiosError(err) && err.response) {
       throw new Error(
-        `SRT upload failed (HTTP ${err.response.status}) — ${url}: ${String(err.response.data ?? '')}`
+        `SRT upload failed (HTTP ${err.response.status}) - ${url}: ${String(err.response.data ?? '')}`
       )
     }
     throw err
   }
 }
-
-// ─── IPC registration ─────────────────────────────────────────────────────────
 
 export function registerAbsIpc(): void {
   ipcMain.handle(IPC.ABS_TEST_CONNECTION, async (_event, url: string, key: string) => {
