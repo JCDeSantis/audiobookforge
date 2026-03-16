@@ -3,6 +3,7 @@ import { join } from 'path'
 import { existsSync, statSync } from 'fs'
 import { unlink } from 'fs/promises'
 import type { WhisperModel, WhisperModelInfo } from '../../shared/types'
+import { isWhisperModelSizeAcceptable } from '../../shared/whisperModelValidation'
 
 export const WHISPER_MODELS: WhisperModelInfo[] = [
   {
@@ -37,7 +38,7 @@ export const WHISPER_MODELS: WhisperModelInfo[] = [
     id: 'large-v3-turbo-q5_0',
     name: 'Large V3 Turbo',
     size: '547 MB',
-    sizeBytes: 573741056,
+    sizeBytes: 574041195,
     description: 'Best with GPU - state-of-the-art encoder, fast quantized inference'
   },
   {
@@ -78,7 +79,7 @@ export function isModelDownloaded(model: WhisperModel): boolean {
 
   try {
     const { size } = statSync(modelPath)
-    return size === info.sizeBytes
+    return isWhisperModelSizeAcceptable(size, info.sizeBytes)
   } catch {
     return false
   }

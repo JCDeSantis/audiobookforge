@@ -1,6 +1,6 @@
 # Audiobook Forge
 
-![Version](https://img.shields.io/badge/version-v1.0.0-d92a3d?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-v1.0.1-d92a3d?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/platform-Windows-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 ![License](https://img.shields.io/badge/license-MIT-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 
@@ -48,7 +48,7 @@ Instead, Audiobook Forge helps create subtitle files for workflows such as:
 
 ### Windows Release
 
-Each `v1.0.0` release is intended to publish two Windows assets to GitHub Releases:
+Each release is intended to publish two Windows assets to GitHub Releases:
 
 - a Windows installer
 - a portable `win-unpacked.zip` build that can be extracted and run from a folder
@@ -145,7 +145,7 @@ This repo includes GitHub Actions-based release automation for Windows builds:
 Release behavior:
 
 - Pushes and pull requests run validation
-- Version tags such as `v1.0.0` build Windows release assets
+- Version tags such as `v1.0.1` build Windows release assets
 - The release workflow uploads both the installer and the portable unpacked zip to GitHub Releases
 - Workflow dispatch can be used for manual release builds
 

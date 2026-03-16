@@ -1,6 +1,6 @@
 import { spawn, ChildProcess } from 'child_process'
 import { join, dirname } from 'path'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, createWriteStream } from 'fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, createWriteStream, statSync } from 'fs'
 import { unlink } from 'fs/promises'
 import { cpus } from 'os'
 import axios from 'axios'
@@ -89,6 +89,14 @@ async function downloadModel(
       reject(err)
     })
   })
+
+  if (total > 0) {
+    const finalSize = statSync(modelPath).size
+    if (finalSize !== total) {
+      await unlink(modelPath).catch(() => {})
+      throw new Error('Model download was incomplete. Please try again.')
+    }
+  }
 
   if (!isModelDownloaded(model)) {
     await unlink(modelPath).catch(() => {})
