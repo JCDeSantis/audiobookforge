@@ -17,7 +17,7 @@ export interface JobDraft {
 
 export type QueueAddPayload = Omit<
   TranscriptionJob,
-  'id' | 'status' | 'progress' | 'srtPath' | 'srtPaths' | 'error' | 'createdAt' | 'completedAt'
+  'id' | 'status' | 'progress' | 'srtPath' | 'srtPaths' | 'error' | 'createdAt' | 'startedAt' | 'completedAt'
 >
 
 export function selectLocalFiles(draft: JobDraft, audioFiles: string[]): JobDraft {

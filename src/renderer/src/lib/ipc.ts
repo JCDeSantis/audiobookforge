@@ -14,7 +14,7 @@ export interface ElectronAPI {
     showInExplorer: (path: string) => Promise<void>
   }
   queue: {
-    add: (job: Omit<TranscriptionJob, 'id' | 'status' | 'progress' | 'srtPath' | 'srtPaths' | 'error' | 'createdAt' | 'completedAt'>) => Promise<TranscriptionJob>
+    add: (job: Omit<TranscriptionJob, 'id' | 'status' | 'progress' | 'srtPath' | 'srtPaths' | 'error' | 'createdAt' | 'startedAt' | 'completedAt'>) => Promise<TranscriptionJob>
     remove: (jobId: string) => Promise<void>
     reorder: (orderedIds: string[]) => Promise<void>
     cancel: (jobId: string) => Promise<void>

@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: audiobookforge-temp
+appId: com.audiobookforge.app
+productName: Audiobook Forge
 directories:
   buildResources: build
 files:
@@ -12,7 +12,7 @@ files:
 asarUnpack:
   - resources/**
 win:
-  executableName: audiobookforge-temp
+  executableName: audiobook-forge
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

@@ -27,17 +27,21 @@ export interface WhisperModelInfo {
   description: string
 }
 
+export type WhisperProgressPhase =
+  | 'downloading-binary'
+  | 'downloading-model'
+  | 'preparing'
+  | 'segmenting'
+  | 'transcribing'
+  | 'uploading'
+  | 'done'
+  | 'error'
+
 export interface WhisperProgressEvent {
   jobId: string
-  phase:
-    | 'downloading-binary'
-    | 'downloading-model'
-    | 'preparing'
-    | 'segmenting'
-    | 'transcribing'
-    | 'done'
-    | 'error'
+  phase: WhisperProgressPhase
   percent: number
+  overallPercent?: number
   segmentIndex?: number
   segmentCount?: number
   liveText?: string
@@ -66,6 +70,7 @@ export interface TranscriptionJob {
   srtPaths: string[] // all saved subtitle paths for completed local fallback/output jobs
   error: string | null
   createdAt: number
+  startedAt: number | null
   completedAt: number | null
 }
 

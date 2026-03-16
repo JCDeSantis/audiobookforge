@@ -331,10 +331,13 @@ export async function transcribeAudio(
           if (progMatch) {
             const localPct = parseInt(progMatch[1], 10)
             const overallElapsed = seg.startSec + (localPct / 100) * seg.durationSec
-            const overallPct = 2 + Math.round((overallElapsed / totalDuration) * 96)
+            const transcriptionPct = Math.min(
+              Math.round((overallElapsed / totalDuration) * 100),
+              99
+            )
             onProgress({
               phase: 'transcribing',
-              percent: overallPct,
+              percent: transcriptionPct,
               segmentIndex: seg.index,
               segmentCount: segments.length
             })
@@ -355,11 +358,14 @@ export async function transcribeAudio(
 
             const localElapsed = hhmmssToSeconds(localTimestamp.replace(',', '.'))
             const overallElapsed = seg.startSec + localElapsed
-            const overallPct = 2 + Math.min(Math.round((overallElapsed / totalDuration) * 96), 96)
+            const transcriptionPct = Math.min(
+              Math.round((overallElapsed / totalDuration) * 100),
+              99
+            )
 
             onProgress({
               phase: 'transcribing',
-              percent: overallPct,
+              percent: transcriptionPct,
               segmentIndex: seg.index,
               segmentCount: segments.length,
               liveText: segMatch[2].trim()

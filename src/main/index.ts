@@ -6,10 +6,20 @@ import { registerAbsIpc } from './ipc/abs.ipc'
 import { registerQueueIpc } from './ipc/queue.ipc'
 import { registerWhisperIpc } from './ipc/whisper.ipc'
 
+function getWindowIconPath(): string {
+  if (app.isPackaged) {
+    return join(process.resourcesPath, 'app.asar.unpacked', 'resources', 'icon.png')
+  }
+
+  return join(app.getAppPath(), 'resources', 'icon.png')
+}
+
 function createWindow(): void {
   const mainWindow = new BrowserWindow({
-    width: 1000,
-    height: 680,
+    width: 1054,
+    height: 677,
+    title: 'Audiobook Forge',
+    icon: getWindowIconPath(),
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#0a0000',
@@ -43,8 +53,10 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  app.setName('Audiobook Forge')
+
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.audiobookforge')
+    app.setAppUserModelId('com.audiobookforge.app')
   }
 
   createWindow()

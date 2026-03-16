@@ -14,8 +14,11 @@ import axios from 'axios'
 import { v4 as uuidv4 } from 'uuid'
 import Epub from 'epub2'
 import { cancelTranscription, transcribeAudio } from '../whisper/transcribe'
+import { isBinaryDownloaded } from '../whisper/binary'
+import { isModelDownloaded } from '../whisper/models'
 import { probeFile } from '../ffmpeg/probe'
 import { splitSrtByDurations } from '../whisper/segments'
+import { createJobProgressPlan, mapOverallProgressEvent } from '../../shared/jobProgress'
 import { uploadSubtitleToAbs } from './abs.ipc'
 import { loadApiKey, loadSettings } from './settings.ipc'
 import { IPC } from '../../shared/types'
@@ -34,6 +37,7 @@ export function loadQueue(): TranscriptionJob[] {
     return parsed.map((job) => ({
       ...job,
       srtPath: job.srtPath ?? null,
+      startedAt: job.startedAt ?? null,
       srtPaths: Array.isArray(job.srtPaths)
         ? job.srtPaths.filter((path): path is string => typeof path === 'string' && path.length > 0)
         : job.srtPath
@@ -180,6 +184,7 @@ async function runNext(): Promise<void> {
   next.error = null
   next.srtPath = null
   next.srtPaths = []
+  next.startedAt = Date.now()
   saveAndBroadcast()
 
   try {
@@ -261,6 +266,26 @@ async function runNext(): Promise<void> {
     }
 
     activeDownloadAbortController = null
+    const progressPlan = createJobProgressPlan({
+      needsBinary: !isBinaryDownloaded(),
+      needsModel: !isModelDownloaded(next.model),
+      needsUpload: next.source === 'abs' && Boolean(next.absItemId)
+    })
+
+    const emitProgress = (progress: Omit<WhisperProgressEvent, 'jobId'>): void => {
+      if (cancelRequested) return
+
+      const event = mapOverallProgressEvent(progressPlan, { ...progress, jobId: next.id })
+      const job = jobs.find((j) => j.id === next.id)
+      if (job) {
+        job.progress = event
+        // Don't persist on every progress tick â€” just broadcast
+        broadcast()
+      }
+      if (win && !win.isDestroyed()) {
+        win.webContents.send(IPC.WHISPER_PROGRESS, event)
+      }
+    }
 
     // Extract EPUB vocab if available
     let promptText: string | undefined
@@ -270,16 +295,19 @@ async function runNext(): Promise<void> {
 
     const srtPath = await transcribeAudio(
       (progress) => {
+        emitProgress(progress)
+        return
         if (cancelRequested) return
-        const event: WhisperProgressEvent = { ...progress, jobId: next.id }
-        const job = jobs.find((j) => j.id === next.id)
+        const event: WhisperProgressEvent = { ...progress, jobId: next!.id }
+        const job = jobs.find((j) => j.id === next!.id) ?? next!
         if (job) {
           job.progress = event
           // Don't persist on every progress tick — just broadcast
           broadcast()
         }
-        if (win && !win.isDestroyed()) {
-          win.webContents.send(IPC.WHISPER_PROGRESS, event)
+        const queueWindow = win!
+        if (queueWindow && !queueWindow.isDestroyed()) {
+          queueWindow.webContents.send(IPC.WHISPER_PROGRESS, event)
         }
       },
       audioPaths,
@@ -298,7 +326,10 @@ async function runNext(): Promise<void> {
       const apiKey = await loadApiKey()
       if (apiKey && baseUrl) {
         try {
-          await uploadSubtitleToAbs(baseUrl, apiKey, next.absItemId, srtPath)
+          emitProgress({ phase: 'uploading', percent: 0 })
+          await uploadSubtitleToAbs(baseUrl, apiKey, next.absItemId, srtPath, (percent) => {
+            emitProgress({ phase: 'uploading', percent })
+          })
           rmSync(srtPath, { force: true })
           next.srtPath = null
           next.srtPaths = []
@@ -369,6 +400,7 @@ export function registerQueueIpc(browserWindow: BrowserWindow): void {
   for (const job of jobs) {
     if (job.status === 'running') {
       job.status = 'queued'
+      job.startedAt = null
       // Clean temp dir for ABS jobs that were interrupted
       if (job.source === 'abs') {
         cleanTempDir(job.id)
@@ -383,7 +415,7 @@ export function registerQueueIpc(browserWindow: BrowserWindow): void {
       _event,
       jobData: Omit<
         TranscriptionJob,
-        'id' | 'status' | 'progress' | 'srtPath' | 'srtPaths' | 'error' | 'createdAt' | 'completedAt'
+        'id' | 'status' | 'progress' | 'srtPath' | 'srtPaths' | 'error' | 'createdAt' | 'startedAt' | 'completedAt'
       >
     ) => {
       const job: TranscriptionJob = {
@@ -395,6 +427,7 @@ export function registerQueueIpc(browserWindow: BrowserWindow): void {
         srtPaths: [],
         error: null,
         createdAt: Date.now(),
+        startedAt: null,
         completedAt: null
       }
       jobs.push(job)

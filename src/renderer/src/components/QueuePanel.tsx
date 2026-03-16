@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import type { TranscriptionJob } from '../../../shared/types'
+import { getWhisperModelBaseName } from '../lib/whisperModels'
 import { useAppStore } from '../store/useAppStore'
 
 function phaseLabel(phase: string | undefined): string {
@@ -14,6 +15,8 @@ function phaseLabel(phase: string | undefined): string {
       return 'Segmenting audio'
     case 'transcribing':
       return 'Transcribing'
+    case 'uploading':
+      return 'Uploading subtitles'
     case 'done':
       return 'Done'
     case 'error':
@@ -31,6 +34,19 @@ function getSavedPaths(job: TranscriptionJob): string[] {
   return job.srtPath ? [job.srtPath] : []
 }
 
+function formatElapsedTime(startedAt: number, now: number): string {
+  const totalSeconds = Math.max(0, Math.floor((now - startedAt) / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+
+  if (hours > 0) {
+    return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
+  }
+
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
 function StatusBadge({
   job,
   isActive
@@ -39,16 +55,18 @@ function StatusBadge({
   isActive: boolean
 }): React.JSX.Element {
   if (isActive && job.progress) {
+    const badgePercent = job.progress.overallPercent ?? job.progress.percent
+
     return (
-      <span className="rounded-full bg-[#7f1d1d] px-2.5 py-1 text-[11px] font-medium text-[#ffd7d7]">
-        Running {job.progress.percent}%
+      <span className="inline-flex min-w-[6.25rem] justify-center rounded-full bg-[#7f1d1d] px-2.5 py-1 text-[11px] font-medium tabular-nums text-[#ffd7d7]">
+        Running {badgePercent}%
       </span>
     )
   }
 
   if (isActive) {
     return (
-      <span className="rounded-full bg-[#7f1d1d] px-2.5 py-1 text-[11px] font-medium text-[#ffd7d7]">
+      <span className="inline-flex min-w-[6.25rem] justify-center rounded-full bg-[#7f1d1d] px-2.5 py-1 text-[11px] font-medium text-[#ffd7d7]">
         Running
       </span>
     )
@@ -91,14 +109,21 @@ function StatusBadge({
 
 function JobCard({
   job,
+  now,
   quiet = false
 }: {
   job: TranscriptionJob
+  now?: number
   quiet?: boolean
 }): React.JSX.Element {
   const { queue } = useAppStore()
   const isActive = job.id === queue.activeJobId
   const savedPaths = getSavedPaths(job)
+  const modelName = getWhisperModelBaseName(job.model)
+  const elapsedText =
+    isActive && typeof now === 'number'
+      ? formatElapsedTime(job.startedAt ?? job.createdAt, now)
+      : null
 
   const handleCancel = (): void => {
     window.electron.queue.cancel(job.id)
@@ -142,13 +167,14 @@ function JobCard({
       }`}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold leading-5 text-[#fff1f1]">{job.title}</div>
-          <div className="mt-1 text-xs text-[#bb9191]">
-            {job.source === 'abs' ? 'AudioBookShelf' : 'Local files'} - {job.model}
-          </div>
-        </div>
+        <div className="min-w-0 text-sm font-semibold leading-5 text-[#fff1f1]">{job.title}</div>
         <StatusBadge job={job} isActive={isActive} />
+      </div>
+      <div
+        className="mt-1 whitespace-nowrap text-[11px] leading-4 text-[#bb9191]"
+        title={`${job.source === 'abs' ? 'AudioBookShelf' : 'Local files'} - ${modelName}`}
+      >
+        {job.source === 'abs' ? 'AudioBookShelf' : 'Local files'} - {modelName}
       </div>
 
       {isActive && job.progress && (
@@ -163,11 +189,12 @@ function JobCard({
               style={{ width: `${job.progress.percent}%` }}
             />
           </div>
-          {job.progress.liveText && (
-            <div className="mt-2 line-clamp-2 text-xs leading-5 text-[#b48c8c]">
-              {job.progress.liveText}
-            </div>
-          )}
+          <div
+            className="mt-2 h-5 overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-5 text-[#b48c8c]"
+            title={job.progress.liveText ?? ''}
+          >
+            {job.progress.liveText ?? '\u00A0'}
+          </div>
         </div>
       )}
 
@@ -199,31 +226,35 @@ function JobCard({
         <div className="mt-3 text-xs text-[#97d8ad]">Uploaded to AudioBookShelf</div>
       )}
 
-      <div className="mt-4 flex flex-wrap justify-end gap-2 text-xs">
-        {isActive && (
-          <button
-            className="rounded-full border border-[#5b1f1f] px-3 py-1.5 text-[#f0c7c7] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
-            onClick={handleCancel}
-          >
-            Cancel
-          </button>
-        )}
-        {job.status === 'failed' && (
-          <button
-            className="rounded-full border border-[#7f1d1d] px-3 py-1.5 text-[#ffb4b4] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
-            onClick={handleRetry}
-          >
-            Retry
-          </button>
-        )}
-        {(job.status === 'done' || job.status === 'failed' || job.status === 'cancelled') && (
-          <button
-            className="rounded-full border border-[#3a1919] px-3 py-1.5 text-[#d7b0b0] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
-            onClick={handleRemove}
-          >
-            Remove
-          </button>
-        )}
+      <div className="mt-4 flex items-center gap-3 text-xs">
+        {elapsedText && <div className="text-[#9d7272]">Elapsed {elapsedText}</div>}
+
+        <div className="ml-auto flex flex-wrap justify-end gap-2">
+          {isActive && (
+            <button
+              className="rounded-full border border-[#5b1f1f] px-3 py-1.5 text-[#f0c7c7] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
+              onClick={handleCancel}
+            >
+              Cancel
+            </button>
+          )}
+          {job.status === 'failed' && (
+            <button
+              className="rounded-full border border-[#7f1d1d] px-3 py-1.5 text-[#ffb4b4] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
+              onClick={handleRetry}
+            >
+              Retry
+            </button>
+          )}
+          {(job.status === 'done' || job.status === 'failed' || job.status === 'cancelled') && (
+            <button
+              className="rounded-full border border-[#3a1919] px-3 py-1.5 text-[#d7b0b0] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
+              onClick={handleRemove}
+            >
+              Remove
+            </button>
+          )}
+        </div>
       </div>
     </article>
   )
@@ -231,6 +262,7 @@ function JobCard({
 
 export function QueuePanel(): React.JSX.Element {
   const [finishedOpen, setFinishedOpen] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
   const { queue } = useAppStore()
   const { jobs } = queue
 
@@ -239,27 +271,24 @@ export function QueuePanel(): React.JSX.Element {
     (job) => job.status === 'done' || job.status === 'failed' || job.status === 'cancelled'
   )
 
+  useEffect(() => {
+    if (activeJobs.length === 0) {
+      return
+    }
+
+    setNow(Date.now())
+    const intervalId = window.setInterval(() => setNow(Date.now()), 1000)
+
+    return () => window.clearInterval(intervalId)
+  }, [activeJobs.length])
+
   const handleClearDone = (): void => {
     window.electron.queue.clearDone()
   }
 
   return (
     <aside className="flex w-[320px] flex-shrink-0 flex-col border-l border-[#2f1515] bg-[linear-gradient(180deg,#090303_0%,#050101_100%)]">
-      <div className="border-b border-[#2f1515] px-5 py-5">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#a67777]">
-          Queue
-        </div>
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <p className="text-sm leading-6 text-[#f7dcdc]">
-            Jobs in motion and recent completions stay here.
-          </p>
-          <span className="rounded-full border border-[#4b2121] bg-[#160909] px-3 py-1 text-xs font-medium text-[#f0c6c6]">
-            {activeJobs.length} active
-          </span>
-        </div>
-      </div>
-
-      <div className="flex flex-1 flex-col overflow-y-auto px-4 py-4">
+      <div className="flex flex-1 flex-col overflow-y-auto px-4 py-5">
         <section>
           <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#9f7171]">
             Active Jobs
@@ -271,7 +300,7 @@ export function QueuePanel(): React.JSX.Element {
           ) : (
             <div className="space-y-3">
               {activeJobs.map((job) => (
-                <JobCard key={job.id} job={job} />
+                <JobCard key={job.id} job={job} now={now} />
               ))}
             </div>
           )}

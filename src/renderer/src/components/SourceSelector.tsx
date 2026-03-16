@@ -76,7 +76,7 @@ export function SourceSelector(): React.JSX.Element {
               Pick one or more `.m4b` or `.mp3` files
             </div>
           </div>
-          <div className="text-2xl text-[#dc2626] transition-transform group-hover:translate-x-1">
+          <div className="text-2xl text-[#fff3f3] transition-transform group-hover:translate-x-1">
             -&gt;
           </div>
         </button>
@@ -91,7 +91,7 @@ export function SourceSelector(): React.JSX.Element {
               Pick an item from your AudioBookShelf library
             </div>
           </div>
-          <div className="text-2xl text-[#dc2626] transition-transform group-hover:translate-x-1">
+          <div className="text-2xl text-[#fff3f3] transition-transform group-hover:translate-x-1">
             -&gt;
           </div>
         </button>

@@ -11,6 +11,7 @@
   --color-text-muted: #aa7f7f;
   --color-accent: #dc2626;
   --color-accent-hover: #b91c1c;
+  --font-display: Constantia, Cambria, 'Palatino Linotype', Georgia, serif;
   --font-ui: 'Trebuchet MS', 'Segoe UI', sans-serif;
   color-scheme: dark;
 }
@@ -54,4 +55,69 @@ button {
 ::selection {
   background: rgba(220, 38, 38, 0.38);
   color: #fff5f2;
+}
+
+.app-wordmark {
+  font-family: var(--font-sans, var(--font-ui));
+  margin: 0;
+  font-size: clamp(2.1rem, 3vw, 2.65rem);
+  font-weight: 700;
+  line-height: 0.92;
+  letter-spacing: -0.06em;
+  text-wrap: balance;
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.app-brand-copy {
+  min-width: 0;
+}
+
+.app-brand-icon {
+  width: 4.4rem;
+  height: 4.4rem;
+  flex-shrink: 0;
+  object-fit: contain;
+  filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.42));
+}
+
+.app-wordmark-primary {
+  color: #f7f2ff;
+}
+
+.app-wordmark-accent {
+  color: #d92a3d;
+}
+
+.app-tagline {
+  margin: 0.5rem 0 0;
+  color: #ead7d2;
+  font-size: 0.86rem;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .app-brand {
+    gap: 0.5rem;
+  }
+
+  .app-brand-icon {
+    width: 3.6rem;
+    height: 3.6rem;
+  }
+
+  .app-wordmark {
+    font-size: clamp(1.75rem, 5vw, 2.2rem);
+  }
+
+  .app-tagline {
+    font-size: 0.8rem;
+  }
 }

@@ -1,7 +1,8 @@
 {
   "name": "audiobookforge",
   "version": "0.1.0",
-  "description": "An Electron application with React and TypeScript",
+  "productName": "Audiobook Forge",
+  "description": "Subtitle-ready listening synced with Audiobookshelf.",
   "main": "./out/main/index.js",
   "author": "example.com",
   "homepage": "https://electron-vite.org",

@@ -275,7 +275,8 @@ export async function uploadSubtitleToAbs(
   baseUrl: string,
   apiKey: string,
   itemId: string,
-  srtPath: string
+  srtPath: string,
+  onProgress?: (percent: number) => void
 ): Promise<void> {
   const book = await fetchAbsBook(baseUrl, apiKey, itemId)
   const uploadFields = getUploadFields(book)
@@ -288,13 +289,17 @@ export async function uploadSubtitleToAbs(
   }
 
   try {
-    for (const upload of uploads) {
+    onProgress?.(0)
+
+    for (const [index, upload] of uploads.entries()) {
       await postSubtitleUpload(url, apiKey, uploadFields, upload.filename, upload.content)
+      onProgress?.(Math.round(((index + 1) / (uploads.length + 1)) * 85))
     }
 
     await axios.post(`${baseUrl}/api/items/${itemId}/scan`, null, {
       headers: authHeaders(apiKey)
     })
+    onProgress?.(100)
   } catch (err) {
     if (axios.isAxiosError(err) && err.response) {
       throw new Error(

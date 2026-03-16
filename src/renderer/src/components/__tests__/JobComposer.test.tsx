@@ -10,20 +10,22 @@ describe('App shell composer flow', () => {
     useAppStore.setState(initialState, true)
   })
 
-  it('renders the new header and source actions with continue disabled', async () => {
+  it('renders the updated header and source actions with continue disabled', () => {
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'New Transcription' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Audiobook Forge' })).toBeInTheDocument()
+    expect(
+      screen.getByText('Generate audiobook subtitles with Audiobookshelf integration')
+    ).toBeInTheDocument()
+    expect(screen.getByText('Choose Source')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Browse Files/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Browse AudioBookShelf/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Continue' })).toBeDisabled()
   })
 
-  it('reveals local output settings and only enables continue when required fields exist', async () => {
+  it('reveals local output settings and only enables continue when required fields exist', () => {
     render(<App />)
-
-    await screen.findByRole('heading', { name: 'New Transcription' })
 
     act(() => {
       useAppStore.getState().selectLocalFiles(['C:\\Audio\\book.m4b'])
@@ -39,10 +41,8 @@ describe('App shell composer flow', () => {
     expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled()
   })
 
-  it('clears source-specific controls when the user changes the selected source', async () => {
+  it('clears source-specific controls when the user changes the selected source', () => {
     render(<App />)
-
-    await screen.findByRole('heading', { name: 'New Transcription' })
 
     act(() => {
       useAppStore.getState().selectLocalFiles(['C:\\Audio\\book.m4b'])

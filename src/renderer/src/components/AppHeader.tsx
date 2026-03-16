@@ -1,4 +1,5 @@
 import React from 'react'
+import appLogo from '../assets/app-logo.png'
 import { useAppStore } from '../store/useAppStore'
 
 export function AppHeader(): React.JSX.Element {
@@ -10,11 +11,17 @@ export function AppHeader(): React.JSX.Element {
   return (
     <header className="border-b border-[#2f1212] bg-[#090303]/95 px-6 py-4 backdrop-blur">
       <div className="flex items-center justify-between gap-4">
-        <div>
-          <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-[#b88989]">
-            AudioBook Forge
+        <div className="app-brand">
+          <img alt="" className="app-brand-icon" src={appLogo} />
+          <div className="app-brand-copy">
+            <h1 className="app-wordmark" aria-label="Audiobook Forge">
+              <span className="app-wordmark-primary">Audiobook</span>{' '}
+              <span className="app-wordmark-accent">Forge</span>
+            </h1>
+            <p className="app-tagline">
+              Generate audiobook subtitles with Audiobookshelf integration
+            </p>
           </div>
-          <div className="mt-1 text-lg font-semibold text-[#fff3f3]">Subtitle Workspace</div>
         </div>
 
         <div className="flex items-center gap-3">
