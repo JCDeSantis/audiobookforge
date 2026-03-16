@@ -7,18 +7,15 @@ import type {
   AbsBook,
   AbsBookSummary
 } from '../../../shared/types'
+import {
+  selectAbsItem as applyAbsItemSelection,
+  selectLocalFiles as applyLocalFileSelection,
+  type JobDraft
+} from '../lib/jobDraft'
 
 // ─── Wizard state ─────────────────────────────────────────────────────────────
 
-interface WizardState {
-  step: 1 | 2 | 3
-  source: 'local' | 'abs' | null
-  audioFiles: string[]
-  absItem: AbsBookSummary | null
-  epubPath: string | null
-  model: WhisperModel
-  outputFolder: string | null
-}
+interface WizardState extends JobDraft {}
 
 const defaultWizard: WizardState = {
   step: 1,
@@ -46,6 +43,11 @@ interface AbsLibraryState {
   lastFetched: number | null
 }
 
+interface UiState {
+  settingsOpen: boolean
+  confirmationOpen: boolean
+}
+
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 interface AppStore {
@@ -62,6 +64,8 @@ interface AppStore {
   setWizardEpubPath: (path: string | null) => void
   setWizardModel: (model: WhisperModel) => void
   setWizardOutputFolder: (folder: string | null) => void
+  selectLocalFiles: (files: string[]) => void
+  selectAbsItem: (item: AbsBookSummary) => void
   resetWizard: () => void
 
   // Queue
@@ -75,9 +79,23 @@ interface AppStore {
   setAbsBooks: (libraryId: string, books: AbsBook[]) => void
   clearAbsCache: () => void
 
-  // ABS Library Modal
+  // UI
+  ui: UiState
+  setSettingsOpen: (open: boolean) => void
+  setConfirmationOpen: (open: boolean) => void
   absModalOpen: boolean
   setAbsModalOpen: (open: boolean) => void
+}
+
+function isFreshDraft(wizard: WizardState, defaultModel: WhisperModel): boolean {
+  return (
+    wizard.source === null &&
+    wizard.audioFiles.length === 0 &&
+    wizard.absItem === null &&
+    wizard.epubPath === null &&
+    wizard.outputFolder === null &&
+    wizard.model === defaultModel
+  )
 }
 
 export const useAppStore = create<AppStore>((set) => ({
@@ -86,10 +104,9 @@ export const useAppStore = create<AppStore>((set) => ({
   setSettings: (s) =>
     set((state) => ({
       settings: s,
-      wizard:
-        state.wizard.source === null && state.wizard.step === 1
-          ? { ...state.wizard, model: s.defaultModel }
-          : state.wizard
+      wizard: isFreshDraft(state.wizard, state.settings.defaultModel)
+        ? { ...state.wizard, model: s.defaultModel }
+        : state.wizard
     })),
 
   // Wizard
@@ -105,8 +122,15 @@ export const useAppStore = create<AppStore>((set) => ({
   setWizardModel: (model) => set((state) => ({ wizard: { ...state.wizard, model } })),
   setWizardOutputFolder: (outputFolder) =>
     set((state) => ({ wizard: { ...state.wizard, outputFolder } })),
+  selectLocalFiles: (audioFiles) =>
+    set((state) => ({ wizard: applyLocalFileSelection(state.wizard, audioFiles) })),
+  selectAbsItem: (absItem) =>
+    set((state) => ({ wizard: applyAbsItemSelection(state.wizard, absItem) })),
   resetWizard: () =>
-    set((state) => ({ wizard: { ...defaultWizard, model: state.settings.defaultModel } })),
+    set((state) => ({
+      wizard: { ...defaultWizard, model: state.settings.defaultModel },
+      ui: { ...state.ui, confirmationOpen: false }
+    })),
 
   // Queue
   queue: { jobs: [], activeJobId: null },
@@ -138,7 +162,11 @@ export const useAppStore = create<AppStore>((set) => ({
       absLibrary: { ...state.absLibrary, libraries: [], books: {}, lastFetched: null }
     })),
 
-  // ABS Library Modal
+  // UI
+  ui: { settingsOpen: false, confirmationOpen: false },
+  setSettingsOpen: (open) => set((state) => ({ ui: { ...state.ui, settingsOpen: open } })),
+  setConfirmationOpen: (open) =>
+    set((state) => ({ ui: { ...state.ui, confirmationOpen: open } })),
   absModalOpen: false,
   setAbsModalOpen: (open) => set({ absModalOpen: open })
 }))
