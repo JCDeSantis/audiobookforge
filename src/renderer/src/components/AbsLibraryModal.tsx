@@ -141,6 +141,8 @@ export function AbsLibraryModal(): React.JSX.Element {
         id: fullBook.id,
         libraryId: fullBook.libraryId,
         folderId: fullBook.folderId,
+        relPath: fullBook.relPath,
+        isFile: fullBook.isFile,
         title: fullBook.title,
         authorName: fullBook.authorName,
         duration: fullBook.duration,
@@ -186,9 +188,7 @@ export function AbsLibraryModal(): React.JSX.Element {
           <div className="border-b border-[#3f0000] bg-[#0d0000] px-4 py-2 text-[11px] text-[#dc2626]">
             {error}
             {settings.absUrl === '' && (
-              <span className="ml-1 text-[#6b2222]">
-                — Configure ABS URL in settings first.
-              </span>
+              <span className="ml-1 text-[#6b2222]">— Configure ABS URL in settings first.</span>
             )}
           </div>
         )}
@@ -244,8 +244,8 @@ export function AbsLibraryModal(): React.JSX.Element {
                   selecting === book.id
                     ? 'cursor-wait border-[#3f0000] bg-[#120000] opacity-70'
                     : selecting !== null
-                    ? 'cursor-not-allowed border-[#1a0000] bg-[#0d0000] opacity-40'
-                    : 'cursor-pointer border-[#1a0000] bg-[#0d0000] hover:border-[#3f0000] hover:bg-[#120000]'
+                      ? 'cursor-not-allowed border-[#1a0000] bg-[#0d0000] opacity-40'
+                      : 'cursor-pointer border-[#1a0000] bg-[#0d0000] hover:border-[#3f0000] hover:bg-[#120000]'
                 }`}
                 onClick={() => selecting === null && handleSelectBook(book)}
               >
@@ -256,7 +256,7 @@ export function AbsLibraryModal(): React.JSX.Element {
                     alt={book.title}
                     className="h-10 w-8 flex-shrink-0 rounded object-cover"
                     onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none'
+                      ;(e.target as HTMLImageElement).style.display = 'none'
                     }}
                   />
                 ) : (

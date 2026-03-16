@@ -18,8 +18,8 @@ function StepIndicator({ current }: { current: 1 | 2 | 3 }): React.JSX.Element {
               s.n === current
                 ? 'bg-[#dc2626] text-white'
                 : s.n < current
-                ? 'bg-[#3f0000] text-[#fca5a5]'
-                : 'bg-[#1a0000] text-[#6b2222]'
+                  ? 'bg-[#3f0000] text-[#fca5a5]'
+                  : 'bg-[#1a0000] text-[#6b2222]'
             }`}
           >
             <span>{s.n}</span>
@@ -50,45 +50,44 @@ export function TranscribePage(): React.JSX.Element {
     wizard.source === 'abs' && wizard.absItem
       ? wizard.absItem.title
       : wizard.audioFiles.length === 1
-      ? (wizard.audioFiles[0].split(/[\\/]/).pop() ?? wizard.audioFiles[0])
-      : `${wizard.audioFiles.length} files`
+        ? (wizard.audioFiles[0].split(/[\\/]/).pop() ?? wizard.audioFiles[0])
+        : `${wizard.audioFiles.length} files`
 
   const sourceLabel = wizard.source === 'abs' ? 'AudioBookShelf' : 'Local file(s)'
 
   const outputLabel =
     wizard.source === 'abs'
       ? 'Upload to ABS automatically'
-      : wizard.outputFolder ?? '(no folder selected)'
+      : (wizard.outputFolder ?? '(no folder selected)')
 
   const epubLabel =
     wizard.source === 'abs' && wizard.absItem?.ebookPath
       ? (wizard.absItem.ebookPath.split(/[\\/]/).pop() ?? 'Auto-linked')
       : wizard.epubPath
-      ? (wizard.epubPath.split(/[\\/]/).pop() ?? wizard.epubPath)
-      : 'None'
+        ? (wizard.epubPath.split(/[\\/]/).pop() ?? wizard.epubPath)
+        : 'None'
 
   const handleAddToQueue = async (): Promise<void> => {
     const absBaseUrl = settings.absUrl.replace(/\/$/, '')
+    const absItem = wizard.source === 'abs' ? wizard.absItem : null
 
     const jobData = {
       source: wizard.source as 'local' | 'abs',
       title: titleLabel,
-      audioFiles:
-        wizard.source === 'abs' && wizard.absItem
-          ? wizard.absItem.audioFiles.map((af) =>
-              // Use HTTP download URL so queue can fetch regardless of same/remote ABS
-              `${absBaseUrl}/api/items/${wizard.absItem!.id}/file/${af.ino}`
-            )
-          : wizard.audioFiles,
+      audioFiles: absItem
+        ? absItem.audioFiles.map((af) => {
+            if (af.contentUrl) {
+              return new URL(af.contentUrl, `${absBaseUrl}/`).toString()
+            }
+            return `${absBaseUrl}/api/items/${absItem.id}/file/${af.ino}/download`
+          })
+        : wizard.audioFiles,
       outputPath: wizard.source === 'local' ? wizard.outputFolder : null,
-      absItemId: wizard.source === 'abs' && wizard.absItem ? wizard.absItem.id : null,
-      absLibraryId: wizard.source === 'abs' && wizard.absItem ? wizard.absItem.libraryId : null,
-      absFolderId: wizard.source === 'abs' && wizard.absItem ? wizard.absItem.folderId : null,
-      absAuthorName: wizard.source === 'abs' && wizard.absItem ? wizard.absItem.authorName : null,
-      epubPath:
-        wizard.source === 'abs' && wizard.absItem?.ebookPath
-          ? wizard.absItem.ebookPath
-          : wizard.epubPath,
+      absItemId: absItem ? absItem.id : null,
+      absLibraryId: absItem ? absItem.libraryId : null,
+      absFolderId: absItem ? absItem.folderId : null,
+      absAuthorName: absItem ? absItem.authorName : null,
+      epubPath: absItem?.ebookPath ? absItem.ebookPath : wizard.epubPath,
       model: wizard.model
     }
 

@@ -1,11 +1,19 @@
 import { ipcMain, app } from 'electron'
 import type { BrowserWindow } from 'electron'
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, copyFileSync, createWriteStream } from 'fs'
-import { join, basename } from 'path'
+import {
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  rmSync,
+  existsSync,
+  copyFileSync,
+  createWriteStream
+} from 'fs'
+import { join, basename, extname } from 'path'
 import axios from 'axios'
 import { v4 as uuidv4 } from 'uuid'
 import Epub from 'epub2'
-import { transcribeAudio } from '../whisper/transcribe'
+import { cancelTranscription, transcribeAudio } from '../whisper/transcribe'
 import { uploadSubtitleToAbs } from './abs.ipc'
 import { loadApiKey, loadSettings } from './settings.ipc'
 import { IPC } from '../../shared/types'
@@ -36,10 +44,12 @@ export function persistQueue(jobs: TranscriptionJob[]): void {
 let jobs: TranscriptionJob[] = []
 let activeJobId: string | null = null
 let cancelRequested = false
+let activeDownloadAbortController: AbortController | null = null
 let win: BrowserWindow | null = null
 
 export function requestCancel(): void {
   cancelRequested = true
+  activeDownloadAbortController?.abort()
 }
 
 // ─── Queue helpers ────────────────────────────────────────────────────────────
@@ -66,14 +76,45 @@ function cleanTempDir(jobId: string): void {
   }
 }
 
+function sanitizeFileNamePart(value: string): string {
+  const sanitized = value
+    .replace(/\.(m4b|mp3|m4a|wav|flac|ogg|aac)$/i, '')
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[. ]+$/g, '')
+
+  return sanitized || 'transcript'
+}
+
+function getJobSrtFileName(job: TranscriptionJob): string {
+  if (job.source === 'local' && job.audioFiles.length > 0) {
+    const firstAudio = basename(job.audioFiles[0], extname(job.audioFiles[0]))
+    return `${sanitizeFileNamePart(firstAudio)}.srt`
+  }
+
+  return `${sanitizeFileNamePart(job.title)}.srt`
+}
+
+function relocateSrtToDir(sourcePath: string, destDir: string, destFileName?: string): string {
+  mkdirSync(destDir, { recursive: true })
+  const dest = join(destDir, destFileName ?? basename(sourcePath))
+
+  if (dest === sourcePath) {
+    return sourcePath
+  }
+
+  copyFileSync(sourcePath, dest)
+  rmSync(sourcePath, { force: true })
+  return dest
+}
+
 // ─── EPUB vocab extraction ────────────────────────────────────────────────────
 
 export async function extractEpubVocab(epubPath: string): Promise<string> {
   try {
     const epub = await Epub.createAsync(epubPath)
-    const chapters = await Promise.all(
-      epub.flow.map((chapter) => epub.getChapterAsync(chapter.id))
-    )
+    const chapters = await Promise.all(epub.flow.map((chapter) => epub.getChapterAsync(chapter.id)))
     const allText = chapters.join(' ')
     // Strip HTML tags
     const text = allText.replace(/<[^>]+>/g, ' ')
@@ -117,24 +158,59 @@ async function runNext(): Promise<void> {
       if (apiKey && baseUrl) {
         const tempDir = getTempDir(next.id)
         mkdirSync(tempDir, { recursive: true })
+        const downloadAbortController = new AbortController()
+        activeDownloadAbortController = downloadAbortController
 
         // Build download paths for each audio file
         const downloadedPaths: string[] = []
         for (const af of next.audioFiles) {
+          if (cancelRequested) {
+            throw new Error('Cancelled')
+          }
+
           // af is absolute path for same-machine ABS; URL for remote
           // If it starts with http, download it
           if (af.startsWith('http')) {
-            const filename = `audio_${downloadedPaths.length}.tmp`
+            const urlPath = new URL(af).pathname
+            const fileExt = extname(urlPath) || '.tmp'
+            const filename = `audio_${downloadedPaths.length}${fileExt}`
             const dest = join(tempDir, filename)
             const res = await axios.get(af, {
               responseType: 'stream',
-              headers: { Authorization: `Bearer ${apiKey}` }
+              headers: { Authorization: `Bearer ${apiKey}` },
+              signal: downloadAbortController.signal
             })
             await new Promise<void>((resolve, reject) => {
               const writer = createWriteStream(dest)
+              const onAbort = (): void => {
+                res.data.destroy(new Error('Cancelled'))
+                writer.destroy(new Error('Cancelled'))
+                rmSync(dest, { force: true })
+                reject(new Error('Cancelled'))
+              }
+
+              downloadAbortController.signal.addEventListener('abort', onAbort, { once: true })
+
               res.data.pipe(writer)
-              writer.on('finish', resolve)
-              writer.on('error', reject)
+              res.data.on('error', (err: Error) => {
+                downloadAbortController.signal.removeEventListener('abort', onAbort)
+                rmSync(dest, { force: true })
+                reject(err)
+              })
+              writer.on('finish', () => {
+                downloadAbortController.signal.removeEventListener('abort', onAbort)
+                if (downloadAbortController.signal.aborted) {
+                  rmSync(dest, { force: true })
+                  reject(new Error('Cancelled'))
+                  return
+                }
+                resolve()
+              })
+              writer.on('error', (err) => {
+                downloadAbortController.signal.removeEventListener('abort', onAbort)
+                rmSync(dest, { force: true })
+                reject(err)
+              })
             })
             downloadedPaths.push(dest)
           } else {
@@ -144,6 +220,8 @@ async function runNext(): Promise<void> {
         audioPaths = downloadedPaths
       }
     }
+
+    activeDownloadAbortController = null
 
     // Extract EPUB vocab if available
     let promptText: string | undefined
@@ -181,33 +259,28 @@ async function runNext(): Promise<void> {
       const apiKey = await loadApiKey()
       if (apiKey && baseUrl) {
         try {
-          await uploadSubtitleToAbs(
-            baseUrl, apiKey,
-            next.absItemId,
-            srtPath,
-            next.absLibraryId ?? '',
-            next.absFolderId ?? '',
-            next.title,
-            next.absAuthorName ?? ''
-          )
+          await uploadSubtitleToAbs(baseUrl, apiKey, next.absItemId, srtPath)
+          rmSync(srtPath, { force: true })
           next.srtPath = null
-        } catch (uploadErr) {
+        } catch {
           // Upload failed — save locally so the SRT isn't lost
-          const srtDir = join(app.getPath('userData'), 'srt')
-          mkdirSync(srtDir, { recursive: true })
-          const dest = join(srtDir, basename(srtPath))
-          copyFileSync(srtPath, dest)
-          next.srtPath = dest
+          next.srtPath = relocateSrtToDir(
+            srtPath,
+            join(app.getPath('userData'), 'srt'),
+            getJobSrtFileName(next)
+          )
         }
       } else {
-        next.srtPath = null
+        next.srtPath = relocateSrtToDir(
+          srtPath,
+          join(app.getPath('userData'), 'srt'),
+          getJobSrtFileName(next)
+        )
       }
     } else {
       // Move SRT to output folder
       if (next.outputPath) {
-        const dest = join(next.outputPath, basename(srtPath))
-        copyFileSync(srtPath, dest)
-        next.srtPath = dest
+        next.srtPath = relocateSrtToDir(srtPath, next.outputPath, getJobSrtFileName(next))
       } else {
         next.srtPath = srtPath
       }
@@ -216,8 +289,7 @@ async function runNext(): Promise<void> {
     next.status = 'done'
     next.completedAt = Date.now()
   } catch (err) {
-    const isCancelled =
-      cancelRequested || (err instanceof Error && err.message === 'Cancelled')
+    const isCancelled = cancelRequested || (err instanceof Error && err.message === 'Cancelled')
     if (isCancelled) {
       next.status = 'cancelled'
     } else {
@@ -230,6 +302,7 @@ async function runNext(): Promise<void> {
     if (next.source === 'abs') {
       cleanTempDir(next.id)
     }
+    activeDownloadAbortController = null
     activeJobId = null
     saveAndBroadcast()
     // Advance queue
@@ -255,22 +328,31 @@ export function registerQueueIpc(browserWindow: BrowserWindow): void {
   }
   persistQueue(jobs)
 
-  ipcMain.handle(IPC.QUEUE_ADD, async (_event, jobData: Omit<TranscriptionJob, 'id' | 'status' | 'progress' | 'srtPath' | 'error' | 'createdAt' | 'completedAt'>) => {
-    const job: TranscriptionJob = {
-      ...jobData,
-      id: uuidv4(),
-      status: 'queued',
-      progress: null,
-      srtPath: null,
-      error: null,
-      createdAt: Date.now(),
-      completedAt: null
+  ipcMain.handle(
+    IPC.QUEUE_ADD,
+    async (
+      _event,
+      jobData: Omit<
+        TranscriptionJob,
+        'id' | 'status' | 'progress' | 'srtPath' | 'error' | 'createdAt' | 'completedAt'
+      >
+    ) => {
+      const job: TranscriptionJob = {
+        ...jobData,
+        id: uuidv4(),
+        status: 'queued',
+        progress: null,
+        srtPath: null,
+        error: null,
+        createdAt: Date.now(),
+        completedAt: null
+      }
+      jobs.push(job)
+      saveAndBroadcast()
+      runNext()
+      return job
     }
-    jobs.push(job)
-    saveAndBroadcast()
-    runNext()
-    return job
-  })
+  )
 
   ipcMain.handle(IPC.QUEUE_REMOVE, (_event, jobId: string) => {
     jobs = jobs.filter((j) => j.id !== jobId)
@@ -287,8 +369,8 @@ export function registerQueueIpc(browserWindow: BrowserWindow): void {
     const job = jobs.find((j) => j.id === jobId)
     if (!job) return
     if (job.id === activeJobId) {
-      cancelRequested = true
-      // cancelTranscription is called via whisper.ipc.ts WHISPER_CANCEL handler
+      requestCancel()
+      cancelTranscription()
     } else if (job.status === 'queued') {
       job.status = 'cancelled'
       job.completedAt = Date.now()
@@ -301,7 +383,9 @@ export function registerQueueIpc(browserWindow: BrowserWindow): void {
   })
 
   ipcMain.handle(IPC.QUEUE_CLEAR_DONE, () => {
-    jobs = jobs.filter((j) => j.status !== 'done' && j.status !== 'failed' && j.status !== 'cancelled')
+    jobs = jobs.filter(
+      (j) => j.status !== 'done' && j.status !== 'failed' && j.status !== 'cancelled'
+    )
     saveAndBroadcast()
   })
 }

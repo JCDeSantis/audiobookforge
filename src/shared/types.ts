@@ -29,7 +29,14 @@ export interface WhisperModelInfo {
 
 export interface WhisperProgressEvent {
   jobId: string
-  phase: 'downloading-binary' | 'downloading-model' | 'preparing' | 'segmenting' | 'transcribing' | 'done' | 'error'
+  phase:
+    | 'downloading-binary'
+    | 'downloading-model'
+    | 'preparing'
+    | 'segmenting'
+    | 'transcribing'
+    | 'done'
+    | 'error'
   percent: number
   segmentIndex?: number
   segmentCount?: number
@@ -47,7 +54,7 @@ export interface TranscriptionJob {
   source: 'local' | 'abs'
   title: string
   audioFiles: string[]
-  outputPath: string | null      // output folder for local jobs; null for ABS
+  outputPath: string | null // output folder for local jobs; null for ABS
   absItemId: string | null
   absLibraryId: string | null
   absFolderId: string | null
@@ -55,7 +62,7 @@ export interface TranscriptionJob {
   epubPath: string | null
   model: WhisperModel
   progress: WhisperProgressEvent | null
-  srtPath: string | null         // temp path during/after transcription
+  srtPath: string | null // temp path during/after transcription
   error: string | null
   createdAt: number
   completedAt: number | null
@@ -72,6 +79,7 @@ export interface AbsLibrary {
 export interface AbsAudioFile {
   index: number
   ino: string
+  contentUrl: string | null
   metadata: { filename: string; ext: string; path: string; relPath: string }
   duration: number
   mimeType: string
@@ -83,12 +91,14 @@ export interface AbsBook {
   id: string
   libraryId: string
   folderId: string
+  relPath: string
+  isFile: boolean
   title: string
   authorName: string
-  duration: number               // seconds
-  cover: string | null           // cover URL relative to ABS server
+  duration: number // seconds
+  cover: string | null // cover URL relative to ABS server
   hasSubtitles: boolean
-  ebookPath: string | null       // absolute path if same-machine ABS
+  ebookPath: string | null // absolute path if same-machine ABS
   audioFiles: AbsAudioFile[]
 }
 
@@ -96,6 +106,8 @@ export interface AbsBookSummary {
   id: string
   libraryId: string
   folderId: string
+  relPath: string
+  isFile: boolean
   title: string
   authorName: string
   duration: number
@@ -145,5 +157,5 @@ export const IPC = {
   // Settings
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET_URL: 'settings:set-url',
-  SETTINGS_SET_API_KEY: 'settings:set-api-key',
+  SETTINGS_SET_API_KEY: 'settings:set-api-key'
 } as const
