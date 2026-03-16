@@ -81,7 +81,7 @@ async function getCudaAssetUrl(): Promise<string | null> {
   try {
     const apiUrl = `https://api.github.com/repos/ggml-org/whisper.cpp/releases/tags/${WHISPER_VERSION}`
     const response = await axios.get(apiUrl, {
-      headers: { 'User-Agent': 'VideoBookForge', Accept: 'application/vnd.github.v3+json' },
+      headers: { 'User-Agent': 'AudiobookForge', Accept: 'application/vnd.github.v3+json' },
       timeout: 10000
     })
     const assets = response.data.assets as Array<{ name: string; browser_download_url: string }>
@@ -135,7 +135,7 @@ async function downloadZip(
   const response = await axios.get(url, {
     responseType: 'stream',
     maxRedirects: 5,
-    headers: { 'User-Agent': 'VideoBookForge' },
+    headers: { 'User-Agent': 'AudiobookForge' },
     signal
   })
 
@@ -214,6 +214,10 @@ export async function downloadBinary(
   // Windows 10+ tar.exe supports zip extraction natively
   await execAsync(`tar -xf "${zipPath}" -C "${binDir}"`)
   await unlink(zipPath).catch(() => {})
+
+  if (!getWhisperExe()) {
+    throw new Error('Whisper binary extraction completed, but no executable was found.')
+  }
 
   // Write GPU marker so transcribe.ts can include it in progress events
   writeFileSync(getGpuMarkerPath(), JSON.stringify({ enabled: useGpu }))

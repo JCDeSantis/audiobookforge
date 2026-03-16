@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { AbsBookSummary, WhisperModel } from '../../../../shared/types'
 import {
   buildConfirmationRows,
+  buildQueueJobData,
   canContinue,
   type JobDraft,
   selectAbsItem,
@@ -119,5 +120,39 @@ describe('jobDraft', () => {
     expect(localRows.find((row) => row.label === 'EPUB')?.value).toBe('book.epub')
     expect(absRows.find((row) => row.label === 'Output')?.value).toBe('Upload to ABS automatically')
     expect(absRows.find((row) => row.label === 'EPUB')?.value).toBe('Project Hail Mary.epub')
+  })
+
+  it('keeps ABS queue payloads free of renderer-built download URLs', () => {
+    const payload = buildQueueJobData(
+      createDraft({
+        source: 'abs',
+        absItem: createAbsItem({
+          audioFiles: [
+            {
+              index: 0,
+              ino: '11',
+              contentUrl: '/media/project-hail-mary-part-1.mp3',
+              metadata: {
+                filename: 'project-hail-mary-part-1.mp3',
+                ext: '.mp3',
+                path: '/books/test/part-1.mp3',
+                relPath: 'part-1.mp3'
+              },
+              duration: 3600,
+              mimeType: 'audio/mpeg',
+              addedAt: 0,
+              updatedAt: 0
+            }
+          ]
+        })
+      }),
+      {
+        absUrl: 'http://abs.local',
+        defaultModel: 'large-v3-turbo'
+      }
+    )
+
+    expect(payload.audioFiles).toEqual([])
+    expect(payload.absItemId).toBe('abs-1')
   })
 })

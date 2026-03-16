@@ -1,0 +1,90 @@
+name: Release Windows
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Optional release tag to publish. Defaults to v<package.json version>.
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build application
+        run: npm run build
+
+      - name: Resolve release metadata
+        id: meta
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          $tag = "${{ github.event.inputs.release_tag }}"
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            if ("${{ github.ref_type }}" -eq "tag" -and -not [string]::IsNullOrWhiteSpace("${{ github.ref_name }}")) {
+              $tag = "${{ github.ref_name }}"
+            } else {
+              $tag = "v$version"
+            }
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Build Windows installer
+        run: npx electron-builder --win nsis --publish never
+
+      - name: Build Windows unpacked folder
+        run: npx electron-builder --win --dir --publish never
+
+      - name: Package unpacked Windows build
+        shell: pwsh
+        run: |
+          $version = "${{ steps.meta.outputs.version }}"
+          $zipPath = "dist/audiobookforge-$version-win-unpacked.zip"
+          if (Test-Path $zipPath) {
+            Remove-Item $zipPath -Force
+          }
+          Compress-Archive -Path "dist/win-unpacked/*" -DestinationPath $zipPath
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: audiobook-forge-windows-${{ steps.meta.outputs.version }}
+          path: |
+            dist/*-setup.exe
+            dist/*-win-unpacked.zip
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Audiobook Forge ${{ steps.meta.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist/*-setup.exe
+            dist/*-win-unpacked.zip

@@ -78,7 +78,7 @@ export function buildConfirmationRows(draft: JobDraft): Array<{ label: string; v
   ]
 }
 
-export function buildQueueJobData(draft: JobDraft, settings: AppSettings): QueueAddPayload {
+export function buildQueueJobData(draft: JobDraft, _settings: AppSettings): QueueAddPayload {
   if (draft.source === 'local') {
     return {
       source: 'local',
@@ -95,18 +95,10 @@ export function buildQueueJobData(draft: JobDraft, settings: AppSettings): Queue
   }
 
   if (draft.source === 'abs' && draft.absItem) {
-    const absBaseUrl = settings.absUrl.replace(/\/$/, '')
-
     return {
       source: 'abs',
       title: draft.absItem.title,
-      audioFiles: draft.absItem.audioFiles.map((audioFile) => {
-        if (audioFile.contentUrl) {
-          return new URL(audioFile.contentUrl, `${absBaseUrl}/`).toString()
-        }
-
-        return `${absBaseUrl}/api/items/${draft.absItem?.id}/file/${audioFile.ino}/download`
-      }),
+      audioFiles: [],
       outputPath: null,
       absItemId: draft.absItem.id,
       absLibraryId: draft.absItem.libraryId,

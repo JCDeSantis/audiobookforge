@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="120" y1="80" x2="1300" y2="860" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#180808"/>
+      <stop offset="1" stop-color="#080202"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="180" y1="120" x2="1240" y2="780" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#160808"/>
+      <stop offset="1" stop-color="#0A0202"/>
+    </linearGradient>
+    <linearGradient id="pill" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#431616"/>
+      <stop offset="1" stop-color="#230C0C"/>
+    </linearGradient>
+    <linearGradient id="button" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#8C3131"/>
+      <stop offset="1" stop-color="#642020"/>
+    </linearGradient>
+    <filter id="shadow" x="40" y="20" width="1360" height="860" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="24"/>
+      <feGaussianBlur stdDeviation="30"/>
+      <feComposite in2="hardAlpha" operator="out"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.45 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+    </filter>
+  </defs>
+
+  <rect width="1440" height="900" fill="url(#bg)"/>
+  <g filter="url(#shadow)">
+    <rect x="90" y="60" width="1260" height="780" rx="34" fill="url(#panel)" stroke="#3B1717" stroke-width="2"/>
+  </g>
+
+  <rect x="92" y="60" width="918" height="120" rx="34" fill="#120606"/>
+  <line x1="1010" y1="60" x2="1010" y2="840" stroke="#351313" stroke-width="2"/>
+  <line x1="90" y1="180" x2="1350" y2="180" stroke="#351313" stroke-width="2"/>
+
+  <rect x="136" y="92" width="54" height="54" rx="16" fill="#130707" stroke="#3B1717" stroke-width="2"/>
+  <rect x="148" y="104" width="4" height="16" rx="2" fill="#1C9EFF"/>
+  <rect x="156" y="98" width="4" height="28" rx="2" fill="#39C5FF"/>
+  <rect x="164" y="92" width="4" height="40" rx="2" fill="#FFC83D"/>
+  <rect x="172" y="100" width="4" height="24" rx="2" fill="#FF7B42"/>
+  <rect x="180" y="108" width="4" height="12" rx="2" fill="#D92A3D"/>
+  <path d="M147 129C155 126 165 126 173 129C180 131 186 136 186 140V142C178 139 168 139 160 142C155 143 151 145 147 148V129Z" fill="#F7F0F0"/>
+  <path d="M186 129C178 126 168 126 160 129C153 131 147 136 147 140V142C155 139 165 139 173 142C178 143 182 145 186 148V129Z" fill="#FFF7F7"/>
+  <path d="M147 142C155 139 165 139 173 142" stroke="#416DFF" stroke-width="2"/>
+  <path d="M160 129V148" stroke="#D2B7FF" stroke-width="2"/>
+  <path d="M173 142C178 143 182 145 186 148" stroke="#FF6B6B" stroke-width="2"/>
+  <text x="212" y="120" fill="#FFF5F5" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700">Audiobook</text>
+  <text x="392" y="120" fill="#D92A3D" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700">Forge</text>
+  <text x="212" y="149" fill="#D7B6B6" font-family="Segoe UI, Arial, sans-serif" font-size="17">Generate audiobook subtitles with Audiobookshelf integration</text>
+
+  <rect x="748" y="98" width="86" height="38" rx="19" fill="#1C0909" stroke="#5E2626"/>
+  <text x="774" y="122" fill="#F6DADA" font-family="Segoe UI, Arial, sans-serif" font-size="16">Queue 0</text>
+  <rect x="850" y="91" width="120" height="52" rx="26" fill="#190909" stroke="#B22B2B"/>
+  <text x="892" y="123" fill="#FFF4F4" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="600">Settings</text>
+
+  <text x="1062" y="110" fill="#B78787" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="4">ACTIVE JOBS</text>
+  <rect x="1046" y="132" width="258" height="92" rx="24" fill="#140707" stroke="#3B1717" stroke-width="2"/>
+  <text x="1080" y="182" fill="#D7B0B0" font-family="Segoe UI, Arial, sans-serif" font-size="22">No jobs are running right now.</text>
+
+  <text x="140" y="254" fill="#B78787" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="4">CHOOSE SOURCE</text>
+
+  <g>
+    <rect x="128" y="284" width="766" height="152" rx="30" fill="#130707" stroke="#3B1717" stroke-width="2"/>
+    <rect x="160" y="318" width="702" height="54" rx="18" fill="url(#pill)" stroke="#5A2424"/>
+    <text x="190" y="351" fill="#FFF2F2" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700">Browse Files</text>
+    <text x="190" y="404" fill="#D7B6B6" font-family="Segoe UI, Arial, sans-serif" font-size="17">Pick one or more .m4b or .mp3 files</text>
+    <text x="816" y="351" fill="#FFFFFF" font-family="Segoe UI, Arial, sans-serif" font-size="28" font-weight="700">-&gt;</text>
+  </g>
+
+  <g>
+    <rect x="128" y="462" width="766" height="152" rx="30" fill="#130707" stroke="#3B1717" stroke-width="2"/>
+    <rect x="160" y="496" width="702" height="54" rx="18" fill="url(#pill)" stroke="#5A2424"/>
+    <text x="190" y="529" fill="#FFF2F2" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700">Browse AudioBookShelf</text>
+    <text x="190" y="582" fill="#D7B6B6" font-family="Segoe UI, Arial, sans-serif" font-size="17">Pick a book from your AudioBookShelf library</text>
+    <text x="816" y="529" fill="#FFFFFF" font-family="Segoe UI, Arial, sans-serif" font-size="28" font-weight="700">-&gt;</text>
+  </g>
+
+  <g>
+    <rect x="128" y="640" width="766" height="128" rx="30" fill="#130707" stroke="#3B1717" stroke-width="2"/>
+    <text x="160" y="682" fill="#B78787" font-family="Segoe UI, Arial, sans-serif" font-size="15" font-weight="700" letter-spacing="4">PROCESSING OPTIONS</text>
+    <text x="160" y="726" fill="#FFF2F2" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="600">Whisper Model</text>
+    <rect x="160" y="742" width="702" height="54" rx="18" fill="#1B0A0A" stroke="#5A2424"/>
+    <text x="186" y="776" fill="#FFF2F2" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600">Large V3 Turbo - 547 MB (Recommended)</text>
+  </g>
+
+  <rect x="764" y="796" width="130" height="54" rx="27" fill="url(#button)"/>
+  <text x="802" y="830" fill="#F7E0E0" font-family="Segoe UI, Arial, sans-serif" font-size="19" font-weight="600">Continue</text>
+
+  <text x="140" y="824" fill="#7E5B5B" font-family="Segoe UI, Arial, sans-serif" font-size="14">Interface preview based on the current Audiobook Forge desktop layout.</text>
+</svg>

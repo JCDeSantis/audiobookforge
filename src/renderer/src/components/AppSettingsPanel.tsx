@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import type { WhisperModel } from '../../../shared/types'
+import { validateAbsUrl } from '../../../shared/urlSafety'
 import { WHISPER_MODELS } from '../lib/whisperModels'
 import { useAppStore } from '../store/useAppStore'
 
@@ -15,34 +16,59 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<'idle' | 'ok' | 'fail'>('idle')
   const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  const validateCurrentUrl = (): string | null => {
+    const validation = validateAbsUrl(url)
+    return validation.ok ? null : validation.error
+  }
 
   const handleTest = async (): Promise<void> => {
     if (!url || !apiKey) return
 
+    const urlError = validateCurrentUrl()
+    if (urlError) {
+      setFormError(urlError)
+      setTestResult('fail')
+      return
+    }
+
     setTesting(true)
+    setFormError(null)
     setTestResult('idle')
     try {
       const ok = await window.electron.abs.testConnection(url, apiKey)
       setTestResult(ok ? 'ok' : 'fail')
-    } catch {
+      if (!ok) {
+        setFormError('Connection failed. Check the URL, protocol, and API key.')
+      }
+    } catch (error) {
       setTestResult('fail')
+      setFormError(error instanceof Error ? error.message : 'Connection failed.')
     } finally {
       setTesting(false)
     }
   }
 
   const handleSave = async (): Promise<void> => {
+    const validation = validateAbsUrl(url)
+    if (!validation.ok) {
+      setFormError(validation.error)
+      return
+    }
+
     setSaving(true)
+    setFormError(null)
     try {
-      await window.electron.settings.setUrl(url)
+      await window.electron.settings.setUrl(validation.normalizedUrl)
       await window.electron.settings.setDefaultModel(defaultModel)
-      if (apiKey) {
+      if (apiKey.trim()) {
         await window.electron.settings.setApiKey(apiKey)
       }
-      setSettings({ ...settings, absUrl: url, defaultModel })
+      setSettings({ ...settings, absUrl: validation.normalizedUrl, defaultModel })
       onClose()
     } catch (error) {
-      console.error('Failed to save settings', error)
+      setFormError(error instanceof Error ? error.message : 'Failed to save settings.')
     } finally {
       setSaving(false)
     }
@@ -86,11 +112,15 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
               className="rounded-[18px] border border-[#482020] bg-[#170909] px-4 py-3 text-sm text-[#fff4f4] outline-none transition-colors placeholder:text-[#8c5d5d] focus:border-[#dc2626]"
               onChange={(event) => {
                 setUrl(event.target.value)
+                setFormError(null)
                 setTestResult('idle')
               }}
-              placeholder="http://192.168.1.50:13378"
+              placeholder="https://abs.example.com"
               value={url}
             />
+            <span className="text-xs leading-5 text-[#a87f7f]">
+              Use HTTPS for remote servers. Plain HTTP is only allowed for localhost or private-network AudioBookShelf instances.
+            </span>
           </label>
 
           <label className="grid gap-2">
@@ -99,6 +129,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
               className="rounded-[18px] border border-[#482020] bg-[#170909] px-4 py-3 text-sm text-[#fff4f4] outline-none transition-colors placeholder:text-[#8c5d5d] focus:border-[#dc2626]"
               onChange={(event) => {
                 setApiKey(event.target.value)
+                setFormError(null)
                 setTestResult('idle')
               }}
               placeholder="Enter API key (leave blank to keep existing)"
@@ -138,12 +169,14 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
               {testResult === 'ok' && (
                 <span className="text-sm text-[#9fe0bb]">Connected successfully</span>
               )}
-              {testResult === 'fail' && (
+              {testResult === 'fail' && !formError && (
                 <span className="text-sm text-[#ff9f9f]">
                   Connection failed. Check the URL and key.
                 </span>
               )}
             </div>
+
+            {formError && <div className="mt-3 text-sm leading-6 text-[#ff9f9f]">{formError}</div>}
           </div>
         </div>
 

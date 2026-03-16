@@ -32,8 +32,7 @@ const defaultElectronMock = {
     getBooks: async () => [],
     getBook: async () => {
       throw new Error('abs.getBook mock not configured')
-    },
-    uploadSubtitle: async () => undefined
+    }
   },
   whisper: {
     cancel: async () => undefined,
@@ -45,9 +44,6 @@ const defaultElectronMock = {
       models: []
     }),
     onProgress: () => () => undefined
-  },
-  webUtils: {
-    getPathForFile: () => ''
   }
 }
 

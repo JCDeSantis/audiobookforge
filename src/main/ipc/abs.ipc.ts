@@ -6,6 +6,7 @@ import { basename, extname } from 'path'
 import { loadApiKey, loadSettings } from './settings.ipc'
 import { splitSrtByDurations } from '../whisper/segments'
 import { IPC } from '../../shared/types'
+import { validateAbsUrl } from '../../shared/urlSafety'
 import type { AbsLibrary, AbsBook, AbsAudioFile } from '../../shared/types'
 
 interface AbsApiLibrary {
@@ -54,7 +55,9 @@ interface AbsApiItem {
 
 async function getBaseUrlAndKey(): Promise<{ baseUrl: string; apiKey: string }> {
   const settings = loadSettings()
-  const baseUrl = settings.absUrl.replace(/\/$/, '')
+  const validation = validateAbsUrl(settings.absUrl)
+  if (!validation.ok) throw new Error(validation.error)
+  const baseUrl = validation.normalizedUrl
   const apiKey = await loadApiKey()
   if (!apiKey) throw new Error('ABS API key not configured')
   return { baseUrl, apiKey }
@@ -141,11 +144,21 @@ export function testAbsConnection(baseUrl: string, apiKey: string): Promise<bool
     .catch(() => false)
 }
 
-async function fetchAbsBook(baseUrl: string, apiKey: string, itemId: string): Promise<AbsBook> {
+export async function fetchAbsBook(baseUrl: string, apiKey: string, itemId: string): Promise<AbsBook> {
   const res = await axios.get<AbsApiItem>(`${baseUrl}/api/items/${itemId}?expanded=1`, {
     headers: authHeaders(apiKey)
   })
   return mapAbsItemToBook(res.data, baseUrl)
+}
+
+export function buildAbsAudioPaths(baseUrl: string, book: Pick<AbsBook, 'id' | 'audioFiles'>): string[] {
+  return book.audioFiles.map((audioFile) => {
+    if (audioFile.contentUrl) {
+      return new URL(audioFile.contentUrl, `${baseUrl}/`).toString()
+    }
+
+    return `${baseUrl}/api/items/${book.id}/file/${audioFile.ino}/download`
+  })
 }
 
 async function fetchAbsBooksWithDetails(
@@ -312,7 +325,12 @@ export async function uploadSubtitleToAbs(
 
 export function registerAbsIpc(): void {
   ipcMain.handle(IPC.ABS_TEST_CONNECTION, async (_event, url: string, key: string) => {
-    const baseUrl = url.replace(/\/$/, '')
+    const validation = validateAbsUrl(url)
+    if (!validation.ok) {
+      return false
+    }
+
+    const baseUrl = validation.normalizedUrl
     return testAbsConnection(baseUrl, key)
   })
 
@@ -340,10 +358,5 @@ export function registerAbsIpc(): void {
   ipcMain.handle(IPC.ABS_GET_BOOK, async (_event, itemId: string) => {
     const { baseUrl, apiKey } = await getBaseUrlAndKey()
     return fetchAbsBook(baseUrl, apiKey, itemId)
-  })
-
-  ipcMain.handle(IPC.ABS_UPLOAD_SUBTITLE, async (_event, itemId: string, srtPath: string) => {
-    const { baseUrl, apiKey } = await getBaseUrlAndKey()
-    await uploadSubtitleToAbs(baseUrl, apiKey, itemId, srtPath)
   })
 }

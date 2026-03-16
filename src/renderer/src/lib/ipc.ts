@@ -27,7 +27,6 @@ export interface ElectronAPI {
     getLibraries: () => Promise<AbsLibrary[]>
     getBooks: (libraryId: string) => Promise<AbsBook[]>
     getBook: (itemId: string) => Promise<AbsBook>
-    uploadSubtitle: (itemId: string, srtPath: string) => Promise<void>
   }
   whisper: {
     cancel: () => Promise<void>
@@ -39,9 +38,6 @@ export interface ElectronAPI {
       models: Array<{ id: string; name: string; size: string; downloaded: boolean }>
     }>
     onProgress: (callback: (event: WhisperProgressEvent) => void) => () => void
-  }
-  webUtils: {
-    getPathForFile: (file: File) => string
   }
 }
 

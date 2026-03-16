@@ -34,7 +34,7 @@ describe('App settings flow', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
 
     const dialog = await screen.findByRole('dialog', { name: 'Settings' })
-    fireEvent.change(within(dialog).getByPlaceholderText('http://192.168.1.50:13378'), {
+    fireEvent.change(within(dialog).getByPlaceholderText('https://abs.example.com'), {
       target: { value: 'http://abs.local' }
     })
     fireEvent.change(
@@ -54,6 +54,29 @@ describe('App settings flow', () => {
       expect(setDefaultModelMock).toHaveBeenCalledWith('medium')
       expect(setApiKeyMock).toHaveBeenCalledWith('secret-key')
     })
+  })
+
+  it('blocks insecure remote ABS URLs before save', async () => {
+    const setUrlMock = vi.fn().mockResolvedValue(undefined)
+    window.electron.settings.setUrl = setUrlMock
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Settings' })
+    fireEvent.change(within(dialog).getByPlaceholderText('https://abs.example.com'), {
+      target: { value: 'http://example.com' }
+    })
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save Settings' }))
+
+    expect(
+      within(dialog).getByText(
+        'Use HTTPS for remote AudioBookShelf servers. HTTP is only allowed on local or private-network hosts.'
+      )
+    ).toBeInTheDocument()
+    expect(setUrlMock).not.toHaveBeenCalled()
   })
 
   it('closes from the panel itself after opening from the header', async () => {

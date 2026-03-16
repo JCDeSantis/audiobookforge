@@ -8,6 +8,11 @@ function fileNameFromPath(path: string | null): string {
   return path.split(/[\\/]/).pop() ?? path
 }
 
+function getComposerModelOptionLabel(model: (typeof WHISPER_MODELS)[number]): string {
+  const recommendedLabel = model.id === 'large-v3-turbo-q5_0' ? ' (Recommended)' : ''
+  return `${model.name} · ${model.size}${recommendedLabel}`
+}
+
 export function JobOptionsCard(): React.JSX.Element {
   const { wizard, setWizardModel, setWizardOutputFolder, setWizardEpubPath } = useAppStore()
   const isAbs = wizard.source === 'abs'
@@ -44,7 +49,7 @@ export function JobOptionsCard(): React.JSX.Element {
           >
             {WHISPER_MODELS.map((model) => (
               <option key={model.id} value={model.id}>
-                {model.name} · {model.size}
+                {getComposerModelOptionLabel(model)}
               </option>
             ))}
           </select>

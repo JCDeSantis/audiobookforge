@@ -1,4 +1,5 @@
 import { ipcMain, dialog, shell } from 'electron'
+import { isAbsolute } from 'path'
 import { IPC } from '../../shared/types'
 
 export function registerFilesIpc(): void {
@@ -29,6 +30,10 @@ export function registerFilesIpc(): void {
   })
 
   ipcMain.handle(IPC.FILES_SHOW_IN_EXPLORER, async (_event, filePath: string) => {
+    if (typeof filePath !== 'string' || !isAbsolute(filePath)) {
+      throw new Error('Explorer paths must be absolute.')
+    }
+
     shell.showItemInFolder(filePath)
   })
 }

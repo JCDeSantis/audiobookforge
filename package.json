@@ -1,11 +1,19 @@
 {
   "name": "audiobookforge",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "productName": "Audiobook Forge",
-  "description": "Subtitle-ready listening synced with Audiobookshelf.",
+  "description": "Generate audiobook subtitles with Audiobookshelf integration.",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
+  "author": "Jacob DeSantis",
+  "license": "MIT",
+  "homepage": "https://github.com/JCDeSantis/audiobookforge",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JCDeSantis/audiobookforge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JCDeSantis/audiobookforge/issues"
+  },
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",

@@ -17,6 +17,9 @@ describe('App shell composer flow', () => {
     expect(
       screen.getByText('Generate audiobook subtitles with Audiobookshelf integration')
     ).toBeInTheDocument()
+    expect(
+      screen.getByRole('option', { name: /Large V3 Turbo.*547 MB.*Recommended/i })
+    ).toBeInTheDocument()
     expect(screen.getByText('Choose Source')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Browse Files/i })).toBeInTheDocument()

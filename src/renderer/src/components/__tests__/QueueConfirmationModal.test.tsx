@@ -132,10 +132,7 @@ describe('QueueConfirmationModal', () => {
     expect(addMock).toHaveBeenCalledWith({
       source: 'abs',
       title: 'Red Rising',
-      audioFiles: [
-        'http://abs.local/media/red-rising-part-1.mp3',
-        'http://abs.local/api/items/abs-1/file/22/download'
-      ],
+      audioFiles: [],
       outputPath: null,
       absItemId: 'abs-1',
       absLibraryId: 'library-1',

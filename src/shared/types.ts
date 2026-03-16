@@ -158,7 +158,6 @@ export const IPC = {
   ABS_GET_LIBRARIES: 'abs:get-libraries',
   ABS_GET_BOOKS: 'abs:get-books',
   ABS_GET_BOOK: 'abs:get-book',
-  ABS_UPLOAD_SUBTITLE: 'abs:upload-subtitle',
 
   // Settings
   SETTINGS_GET: 'settings:get',

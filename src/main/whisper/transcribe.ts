@@ -6,7 +6,7 @@ import { cpus } from 'os'
 import axios from 'axios'
 import { app } from 'electron'
 import { getWhisperExe, isBinaryDownloaded, downloadBinary, isGpuEnabled } from './binary'
-import { getModelPath, getModelUrl, isModelDownloaded, getModelDir } from './models'
+import { getModelPath, getModelUrl, isModelDownloaded, getModelDir, WHISPER_MODELS } from './models'
 import { getFfmpegPath, sumDurations } from '../ffmpeg/probe'
 import { createTempDir, createConcatListFile, cleanupTempDir } from '../ffmpeg/concat'
 import { parseSilences, buildSegments, offsetSrtContent, mergeSrts } from './segments'
@@ -36,6 +36,11 @@ async function downloadModel(
 
   const modelPath = getModelPath(model)
   const url = getModelUrl(model)
+  const modelInfo = WHISPER_MODELS.find((entry) => entry.id === model)
+
+  if (!modelInfo) {
+    throw new Error(`Unsupported model requested: ${model}`)
+  }
 
   const response = await axios.get(url, {
     responseType: 'stream',
@@ -84,6 +89,13 @@ async function downloadModel(
       reject(err)
     })
   })
+
+  if (!isModelDownloaded(model)) {
+    await unlink(modelPath).catch(() => {})
+    throw new Error(
+      `Downloaded model size did not match the expected ${modelInfo.size}. Please try again.`
+    )
+  }
 }
 
 export async function transcribeAudio(

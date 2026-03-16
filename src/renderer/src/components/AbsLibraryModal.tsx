@@ -2,6 +2,15 @@ import React, { useCallback, useEffect, useState } from 'react'
 import type { AbsBook } from '../../../shared/types'
 import { useAppStore } from '../store/useAppStore'
 
+type BookSortOption = 'title' | 'author' | 'missing-srt' | 'has-srt'
+
+const SORT_OPTIONS: Array<{ value: BookSortOption; label: string }> = [
+  { value: 'title', label: 'Book name' },
+  { value: 'author', label: 'Author' },
+  { value: 'missing-srt', label: 'No SRT first' },
+  { value: 'has-srt', label: 'Has SRT first' }
+]
+
 function formatDuration(seconds: number): string {
   const hours = Math.floor(seconds / 3600)
   const minutes = Math.floor((seconds % 3600) / 60)
@@ -13,10 +22,48 @@ function formatDuration(seconds: number): string {
   return `${minutes}m`
 }
 
+function compareText(left: string, right: string): number {
+  return left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' })
+}
+
+function sortBooks(books: AbsBook[], sortBy: BookSortOption): AbsBook[] {
+  return [...books].sort((left, right) => {
+    if (sortBy === 'author') {
+      return (
+        compareText(left.authorName, right.authorName) ||
+        compareText(left.title, right.title)
+      )
+    }
+
+    if (sortBy === 'missing-srt') {
+      return (
+        Number(left.hasSubtitles) - Number(right.hasSubtitles) ||
+        compareText(left.title, right.title)
+      )
+    }
+
+    if (sortBy === 'has-srt') {
+      return (
+        Number(right.hasSubtitles) - Number(left.hasSubtitles) ||
+        compareText(left.title, right.title)
+      )
+    }
+
+    return (
+      compareText(left.title, right.title) ||
+      compareText(left.authorName, right.authorName)
+    )
+  })
+}
+
+function formatBookCount(count: number): string {
+  return `${count} ${count === 1 ? 'title' : 'titles'}`
+}
+
 function SubtitleBadge({ book, inQueue }: { book: AbsBook; inQueue: boolean }): React.JSX.Element {
   if (inQueue) {
     return (
-      <span className="rounded-full bg-[#1c2b52] px-2.5 py-1 text-[11px] font-medium text-[#c8daff]">
+      <span className="rounded-full border border-[#3558a8] bg-[#132347]/95 px-2.5 py-1 text-[11px] font-medium text-[#dbe7ff]">
         In Queue
       </span>
     )
@@ -24,14 +71,14 @@ function SubtitleBadge({ book, inQueue }: { book: AbsBook; inQueue: boolean }): 
 
   if (book.hasSubtitles) {
     return (
-      <span className="rounded-full bg-[#183824] px-2.5 py-1 text-[11px] font-medium text-[#9fe0bb]">
+      <span className="rounded-full border border-[#245335] bg-[#102417]/95 px-2.5 py-1 text-[11px] font-medium text-[#9fe0bb]">
         Has SRT
       </span>
     )
   }
 
   return (
-    <span className="rounded-full bg-[#251010] px-2.5 py-1 text-[11px] font-medium text-[#d3abab]">
+    <span className="rounded-full border border-[#5a2828] bg-[#251010]/95 px-2.5 py-1 text-[11px] font-medium text-[#ffd2d2]">
       No SRT
     </span>
   )
@@ -52,6 +99,7 @@ export function AbsLibraryModal(): React.JSX.Element {
 
   const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const [sortBy, setSortBy] = useState<BookSortOption>('missing-srt')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selecting, setSelecting] = useState<string | null>(null)
@@ -157,13 +205,15 @@ export function AbsLibraryModal(): React.JSX.Element {
   }, [loadBooks, selectedLibraryId])
 
   const currentBooks = selectedLibraryId ? (absLibrary.books[selectedLibraryId] ?? []) : []
-  const filteredBooks = search
+  const normalizedSearch = search.trim().toLowerCase()
+  const filteredBooks = normalizedSearch
     ? currentBooks.filter(
         (book) =>
-          book.title.toLowerCase().includes(search.toLowerCase()) ||
-          book.authorName.toLowerCase().includes(search.toLowerCase())
+          book.title.toLowerCase().includes(normalizedSearch) ||
+          book.authorName.toLowerCase().includes(normalizedSearch)
       )
     : currentBooks
+  const visibleBooks = sortBooks(filteredBooks, sortBy)
 
   const handleSelectBook = async (book: AbsBook): Promise<void> => {
     setSelecting(book.id)
@@ -196,7 +246,7 @@ export function AbsLibraryModal(): React.JSX.Element {
       <div
         aria-labelledby="abs-library-title"
         aria-modal="true"
-        className="flex h-[min(760px,calc(100vh-48px))] w-full max-w-5xl flex-col overflow-hidden rounded-[32px] border border-[#452020] bg-[linear-gradient(180deg,#150808_0%,#0d0404_100%)] shadow-[0_30px_90px_rgba(0,0,0,0.55)]"
+        className="flex h-[min(780px,calc(100vh-48px))] w-full max-w-6xl flex-col overflow-hidden rounded-[32px] border border-[#452020] bg-[linear-gradient(180deg,#150808_0%,#0d0404_100%)] shadow-[0_30px_90px_rgba(0,0,0,0.55)]"
         role="dialog"
       >
         <div className="flex items-start justify-between gap-4 border-b border-[#351616] px-6 py-5">
@@ -208,8 +258,8 @@ export function AbsLibraryModal(): React.JSX.Element {
               AudioBookShelf Library
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[#d9b7b7]">
-              Pick a book from your library, keep duplicate work visible, and send the selection
-              straight back into the composer.
+              Pick a book from your library, scan covers faster, and sort the catalog around the
+              titles that still need subtitles.
             </p>
           </div>
 
@@ -267,12 +317,41 @@ export function AbsLibraryModal(): React.JSX.Element {
         )}
 
         <div className="border-b border-[#351616] px-6 py-4">
-          <input
-            className="w-full rounded-[18px] border border-[#482020] bg-[#170909] px-4 py-3 text-sm text-[#fff4f4] outline-none transition-colors placeholder:text-[#8c5d5d] focus:border-[#dc2626]"
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search by title or author"
-            value={search}
-          />
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
+            <label className="flex-1">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#b78787]">
+                Search
+              </div>
+              <input
+                className="w-full rounded-[18px] border border-[#482020] bg-[#170909] px-4 py-3 text-sm text-[#fff4f4] outline-none transition-colors placeholder:text-[#8c5d5d] focus:border-[#dc2626]"
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search by title or author"
+                value={search}
+              />
+            </label>
+
+            <label className="w-full lg:w-[240px]">
+              <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#b78787]">
+                Sort by
+              </div>
+              <select
+                className="w-full rounded-[18px] border border-[#482020] bg-[#170909] px-4 py-3 text-sm text-[#fff4f4] outline-none transition-colors focus:border-[#dc2626]"
+                onChange={(event) => setSortBy(event.target.value as BookSortOption)}
+                value={sortBy}
+              >
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs uppercase tracking-[0.18em] text-[#9f7373]">
+            <span>{formatBookCount(visibleBooks.length)}</span>
+            <span>{selectedLibraryId ? 'Click any title to load it into the composer' : ''}</span>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
@@ -282,7 +361,7 @@ export function AbsLibraryModal(): React.JSX.Element {
             </div>
           )}
 
-          {!loading && filteredBooks.length === 0 && (
+          {!loading && visibleBooks.length === 0 && (
             <div className="flex h-full items-center justify-center rounded-[24px] border border-dashed border-[#3a1b1b] bg-[#110606] px-6 text-center text-sm leading-6 text-[#a77d7d]">
               {absLibrary.libraries.length === 0
                 ? 'Once your AudioBookShelf connection is set, your libraries will show up here.'
@@ -290,57 +369,57 @@ export function AbsLibraryModal(): React.JSX.Element {
             </div>
           )}
 
-          {!loading && filteredBooks.length > 0 && (
-            <div className="grid gap-3">
-              {filteredBooks.map((book) => (
-                <button
-                  key={book.id}
-                  className={`flex items-center gap-4 rounded-[24px] border px-4 py-4 text-left transition-colors ${
-                    selecting === book.id
-                      ? 'cursor-wait border-[#5b2626] bg-[#1a0a0a] opacity-75'
-                      : selecting !== null
-                        ? 'cursor-not-allowed border-[#2a1515] bg-[#100606] opacity-45'
-                        : 'border-[#301717] bg-[#120707] hover:border-[#dc2626] hover:bg-[#190909]'
-                  }`}
-                  disabled={selecting !== null}
-                  onClick={() => void handleSelectBook(book)}
-                  type="button"
-                >
-                  {book.cover ? (
-                    <img
-                      alt={book.title}
-                      className="h-16 w-12 flex-shrink-0 rounded-[12px] object-cover"
-                      onError={(event) => {
-                        ;(event.target as HTMLImageElement).style.display = 'none'
-                      }}
-                      src={book.cover}
-                    />
-                  ) : (
-                    <div className="flex h-16 w-12 flex-shrink-0 items-center justify-center rounded-[12px] border border-[#3a1d1d] bg-[#1b0b0b] text-lg text-[#d8b6b6]">
-                      BK
-                    </div>
-                  )}
+          {!loading && visibleBooks.length > 0 && (
+            <div className="grid gap-3 md:grid-cols-3">
+              {visibleBooks.map((book) => {
+                const isSelectingThisBook = selecting === book.id
+                const isAnotherBookSelecting = selecting !== null && !isSelectingThisBook
+                const isQueued = queuedAbsIds.has(book.id)
 
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold leading-6 text-[#fff1f1]">
-                      {book.title}
-                    </div>
-                    <div className="text-sm text-[#c7a2a2]">
-                      {book.authorName} - {formatDuration(book.duration)}
-                    </div>
-                  </div>
+                return (
+                  <button
+                    key={book.id}
+                    className={`flex h-full flex-col rounded-[22px] border px-4 py-3.5 text-left transition-all ${
+                      isSelectingThisBook
+                        ? 'cursor-wait border-[#5b2626] bg-[#1a0a0a] opacity-80'
+                        : isAnotherBookSelecting
+                          ? 'cursor-not-allowed border-[#2a1515] bg-[#100606] opacity-45'
+                          : 'border-[#301717] bg-[linear-gradient(180deg,#150808_0%,#100505_100%)] hover:border-[#dc2626] hover:bg-[#190909]'
+                    }`}
+                    disabled={selecting !== null}
+                    onClick={() => void handleSelectBook(book)}
+                    type="button"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-base font-semibold leading-6 text-[#fff1f1]">
+                          {book.title}
+                        </h3>
+                        <div className="mt-1 text-sm leading-5 text-[#d4afaf]">{book.authorName}</div>
+                      </div>
 
-                  <div className="flex-shrink-0">
-                    {selecting === book.id ? (
-                      <span className="rounded-full bg-[#251010] px-2.5 py-1 text-[11px] font-medium text-[#d3abab]">
-                        Loading...
-                      </span>
-                    ) : (
-                      <SubtitleBadge book={book} inQueue={queuedAbsIds.has(book.id)} />
-                    )}
-                  </div>
-                </button>
-              ))}
+                      <div className="flex-shrink-0">
+                        {isSelectingThisBook ? (
+                          <div className="rounded-full border border-[#5b2626] bg-[#1d0a0a]/95 px-2.5 py-1 text-[11px] font-medium text-[#ffd5d5]">
+                            Loading...
+                          </div>
+                        ) : (
+                          <SubtitleBadge book={book} inQueue={isQueued} />
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-3 border-t border-[#341616] pt-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#b98a8a]">
+                          Audiobook Length
+                        </span>
+                        <span className="text-sm text-[#f2d6d6]">{formatDuration(book.duration)}</span>
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
             </div>
           )}
         </div>
