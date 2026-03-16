@@ -72,7 +72,9 @@ export function SourceSelector(): React.JSX.Element {
         >
           <div>
             <div className="text-base font-semibold text-[#fff3f3]">Browse Files</div>
-            <div className="mt-1 text-sm text-[#c7a3a3]">Pick one or more `.m4b` or `.mp3` files</div>
+            <div className="mt-1 text-sm text-[#c7a3a3]">
+              Pick one or more `.m4b` or `.mp3` files
+            </div>
           </div>
           <div className="text-2xl text-[#dc2626] transition-transform group-hover:translate-x-1">
             -&gt;

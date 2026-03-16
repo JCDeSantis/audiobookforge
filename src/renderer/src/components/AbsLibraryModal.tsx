@@ -1,32 +1,37 @@
-import React from 'react'
-import { useState, useEffect } from 'react'
-import { useAppStore } from '../store/useAppStore'
+import React, { useCallback, useEffect, useState } from 'react'
 import type { AbsBook } from '../../../shared/types'
+import { useAppStore } from '../store/useAppStore'
 
 function formatDuration(seconds: number): string {
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  if (h > 0) return `${h}h ${m}m`
-  return `${m}m`
+  const hours = Math.floor(seconds / 3600)
+  const minutes = Math.floor((seconds % 3600) / 60)
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`
+  }
+
+  return `${minutes}m`
 }
 
-function subtitleBadge(book: AbsBook, inQueue: boolean): React.JSX.Element {
+function SubtitleBadge({ book, inQueue }: { book: AbsBook; inQueue: boolean }): React.JSX.Element {
   if (inQueue) {
     return (
-      <span className="rounded-[3px] bg-[#1d4ed8] px-1.5 py-0.5 text-[9px] text-[#93c5fd]">
+      <span className="rounded-full bg-[#1c2b52] px-2.5 py-1 text-[11px] font-medium text-[#c8daff]">
         In Queue
       </span>
     )
   }
+
   if (book.hasSubtitles) {
     return (
-      <span className="rounded-[3px] bg-[#14532d] px-1.5 py-0.5 text-[9px] text-[#4ade80]">
+      <span className="rounded-full bg-[#183824] px-2.5 py-1 text-[11px] font-medium text-[#9fe0bb]">
         Has SRT
       </span>
     )
   }
+
   return (
-    <span className="rounded-[3px] bg-[#1a0000] px-1.5 py-0.5 text-[9px] text-[#6b2222]">
+    <span className="rounded-full bg-[#251010] px-2.5 py-1 text-[11px] font-medium text-[#d3abab]">
       No SRT
     </span>
   )
@@ -40,104 +45,131 @@ export function AbsLibraryModal(): React.JSX.Element {
     setAbsLibraries,
     setAbsBooks,
     setAbsConnected,
-    setWizardAbsItem,
-    setWizardSource,
-    setAbsModalOpen
+    selectAbsItem,
+    setAbsModalOpen,
+    setSettingsOpen
   } = useAppStore()
 
   const [selectedLibraryId, setSelectedLibraryId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selecting, setSelecting] = useState<string | null>(null)
 
   const queuedAbsIds = new Set(
     queue.jobs
-      .filter((j) => j.source === 'abs' && (j.status === 'queued' || j.status === 'running'))
-      .map((j) => j.absItemId)
+      .filter(
+        (job) => job.source === 'abs' && (job.status === 'queued' || job.status === 'running')
+      )
+      .map((job) => job.absItemId)
       .filter(Boolean) as string[]
   )
 
-  const loadLibraries = async (): Promise<void> => {
+  const handleOpenSettings = (): void => {
+    setAbsModalOpen(false)
+    setSettingsOpen(true)
+  }
+
+  const loadLibraries = useCallback(async (): Promise<void> => {
+    if (!settings.absUrl) {
+      setError('Add your AudioBookShelf URL in Settings before browsing the library.')
+      setAbsConnected(false)
+      return
+    }
+
     setLoading(true)
     setError(null)
     try {
-      const libs = await window.electron.abs.getLibraries()
-      setAbsLibraries(libs)
+      const libraries = await window.electron.abs.getLibraries()
+      setAbsLibraries(libraries)
       setAbsConnected(true)
-      if (libs.length > 0 && !selectedLibraryId) {
-        setSelectedLibraryId(libs[0].id)
+      if (libraries.length > 0 && !selectedLibraryId) {
+        setSelectedLibraryId(libraries[0].id)
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to connect to ABS')
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error ? loadError.message : 'Failed to connect to AudioBookShelf.'
+      )
       setAbsConnected(false)
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedLibraryId, setAbsConnected, setAbsLibraries, settings.absUrl])
 
-  const loadBooks = async (libraryId: string): Promise<void> => {
-    if (absLibrary.books[libraryId]) return
-    setLoading(true)
-    setError(null)
-    try {
-      const books = await window.electron.abs.getBooks(libraryId)
-      setAbsBooks(libraryId, books)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load books')
-    } finally {
-      setLoading(false)
-    }
-  }
+  const loadBooks = useCallback(
+    async (libraryId: string): Promise<void> => {
+      if (absLibrary.books[libraryId]) {
+        return
+      }
+
+      setLoading(true)
+      setError(null)
+      try {
+        const books = await window.electron.abs.getBooks(libraryId)
+        setAbsBooks(libraryId, books)
+      } catch (loadError) {
+        setError(loadError instanceof Error ? loadError.message : 'Failed to load books.')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [absLibrary.books, setAbsBooks]
+  )
 
   const handleRefresh = async (): Promise<void> => {
     setLoading(true)
     setError(null)
     try {
-      const libs = await window.electron.abs.getLibraries()
-      setAbsLibraries(libs)
-      // Reload current library's books
+      const libraries = await window.electron.abs.getLibraries()
+      setAbsLibraries(libraries)
+
       if (selectedLibraryId) {
         const books = await window.electron.abs.getBooks(selectedLibraryId)
         setAbsBooks(selectedLibraryId, books)
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Refresh failed')
+    } catch (refreshError) {
+      setError(refreshError instanceof Error ? refreshError.message : 'Refresh failed.')
     } finally {
       setLoading(false)
     }
   }
 
   useEffect(() => {
+    if (!settings.absUrl) {
+      setError('Add your AudioBookShelf URL in Settings before browsing the library.')
+      return
+    }
+
     if (absLibrary.libraries.length === 0) {
-      loadLibraries()
-    } else if (absLibrary.libraries.length > 0 && !selectedLibraryId) {
+      void loadLibraries()
+      return
+    }
+
+    if (!selectedLibraryId && absLibrary.libraries.length > 0) {
       setSelectedLibraryId(absLibrary.libraries[0].id)
     }
-  }, [])
+  }, [settings.absUrl, absLibrary.libraries, loadLibraries, selectedLibraryId])
 
   useEffect(() => {
     if (selectedLibraryId) {
-      loadBooks(selectedLibraryId)
+      void loadBooks(selectedLibraryId)
     }
-  }, [selectedLibraryId])
+  }, [loadBooks, selectedLibraryId])
 
   const currentBooks = selectedLibraryId ? (absLibrary.books[selectedLibraryId] ?? []) : []
   const filteredBooks = search
     ? currentBooks.filter(
-        (b) =>
-          b.title.toLowerCase().includes(search.toLowerCase()) ||
-          b.authorName.toLowerCase().includes(search.toLowerCase())
+        (book) =>
+          book.title.toLowerCase().includes(search.toLowerCase()) ||
+          book.authorName.toLowerCase().includes(search.toLowerCase())
       )
     : currentBooks
-
-  const [selecting, setSelecting] = useState<string | null>(null)
 
   const handleSelectBook = async (book: AbsBook): Promise<void> => {
     setSelecting(book.id)
     try {
-      // Fetch full item details to get audioFiles (not included in library list response)
       const fullBook = await window.electron.abs.getBook(book.id)
-      setWizardAbsItem({
+      selectAbsItem({
         id: fullBook.id,
         libraryId: fullBook.libraryId,
         folderId: fullBook.folderId,
@@ -151,143 +183,166 @@ export function AbsLibraryModal(): React.JSX.Element {
         ebookPath: fullBook.ebookPath,
         audioFiles: fullBook.audioFiles
       })
-      setWizardSource('abs')
       setAbsModalOpen(false)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load book details')
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Failed to load book details.')
     } finally {
       setSelecting(null)
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="flex h-[600px] w-[700px] flex-col rounded-xl border border-[#2a0000] bg-[#0a0000] shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-[#2a0000] px-4 py-3">
-          <span className="text-[13px] font-semibold text-[#fef2f2]">AudioBookShelf Library</span>
-          <div className="flex items-center gap-2">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-sm">
+      <div
+        aria-labelledby="abs-library-title"
+        aria-modal="true"
+        className="flex h-[min(760px,calc(100vh-48px))] w-full max-w-5xl flex-col overflow-hidden rounded-[32px] border border-[#452020] bg-[linear-gradient(180deg,#150808_0%,#0d0404_100%)] shadow-[0_30px_90px_rgba(0,0,0,0.55)]"
+        role="dialog"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[#351616] px-6 py-5">
+          <div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#b78787]">
+              Source Browser
+            </div>
+            <h2 id="abs-library-title" className="mt-3 text-2xl font-semibold text-[#fff4f4]">
+              AudioBookShelf Library
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#d9b7b7]">
+              Pick a book from your library, keep duplicate work visible, and send the selection
+              straight back into the composer.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
             <button
-              className="text-[11px] text-[#6b2222] hover:text-[#fca5a5] transition-colors"
+              className="rounded-full border border-[#4b2222] px-4 py-2 text-sm text-[#f0d0d0] transition-colors hover:border-[#dc2626] hover:text-[#fff4f4] disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={loading || !settings.absUrl}
               onClick={handleRefresh}
-              disabled={loading}
+              type="button"
             >
-              ↻ Refresh
+              Refresh
             </button>
             <button
-              className="text-[11px] text-[#6b2222] hover:text-[#fca5a5] transition-colors"
+              className="rounded-full border border-[#4b2222] px-4 py-2 text-sm text-[#f0d0d0] transition-colors hover:border-[#dc2626] hover:text-[#fff4f4]"
               onClick={() => setAbsModalOpen(false)}
+              type="button"
             >
-              ✕ Close
+              Close
             </button>
           </div>
         </div>
 
-        {/* Error */}
         {error && (
-          <div className="border-b border-[#3f0000] bg-[#0d0000] px-4 py-2 text-[11px] text-[#dc2626]">
-            {error}
-            {settings.absUrl === '' && (
-              <span className="ml-1 text-[#6b2222]">— Configure ABS URL in settings first.</span>
+          <div className="border-b border-[#4d1f1f] bg-[#180909] px-6 py-4 text-sm leading-6 text-[#ffb0b0]">
+            <div>{error}</div>
+            {!settings.absUrl && (
+              <button
+                className="mt-3 rounded-full border border-[#7f1d1d] px-4 py-2 text-sm font-medium text-[#ffe1e1] transition-colors hover:border-[#dc2626] hover:text-white"
+                onClick={handleOpenSettings}
+                type="button"
+              >
+                Open Settings
+              </button>
             )}
           </div>
         )}
 
-        {/* Library tabs */}
         {absLibrary.libraries.length > 0 && (
-          <div className="flex gap-0 border-b border-[#2a0000] px-4">
-            {absLibrary.libraries.map((lib) => (
+          <div className="flex flex-wrap gap-2 border-b border-[#351616] px-6 py-4">
+            {absLibrary.libraries.map((library) => (
               <button
-                key={lib.id}
-                className={`px-3 py-2 text-[11px] font-medium transition-colors border-b-2 ${
-                  lib.id === selectedLibraryId
-                    ? 'border-[#dc2626] text-[#fca5a5]'
-                    : 'border-transparent text-[#6b2222] hover:text-[#fca5a5]'
+                key={library.id}
+                className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                  library.id === selectedLibraryId
+                    ? 'border-[#dc2626] bg-[#220c0c] text-[#fff1f1]'
+                    : 'border-[#3d1d1d] bg-[#120707] text-[#d3aaaa] hover:border-[#dc2626] hover:text-[#fff1f1]'
                 }`}
-                onClick={() => setSelectedLibraryId(lib.id)}
+                onClick={() => setSelectedLibraryId(library.id)}
+                type="button"
               >
-                {lib.name}
+                {library.name}
               </button>
             ))}
           </div>
         )}
 
-        {/* Search */}
-        <div className="border-b border-[#2a0000] px-4 py-2">
+        <div className="border-b border-[#351616] px-6 py-4">
           <input
-            className="w-full rounded border border-[#2a0000] bg-[#0d0000] px-3 py-1.5 text-[11px] text-[#fef2f2] placeholder-[#3f0000] focus:border-[#dc2626] focus:outline-none"
-            placeholder="Search title or author..."
+            className="w-full rounded-[18px] border border-[#482020] bg-[#170909] px-4 py-3 text-sm text-[#fff4f4] outline-none transition-colors placeholder:text-[#8c5d5d] focus:border-[#dc2626]"
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search by title or author"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
-        {/* Book list */}
-        <div className="flex-1 overflow-y-auto p-3">
+        <div className="flex-1 overflow-y-auto px-6 py-5">
           {loading && (
-            <div className="flex h-full items-center justify-center text-[11px] text-[#6b2222]">
-              Loading...
+            <div className="flex h-full items-center justify-center text-sm text-[#cba8a8]">
+              Loading library data...
             </div>
           )}
+
           {!loading && filteredBooks.length === 0 && (
-            <div className="flex h-full items-center justify-center text-[11px] text-[#3f0000]">
+            <div className="flex h-full items-center justify-center rounded-[24px] border border-dashed border-[#3a1b1b] bg-[#110606] px-6 text-center text-sm leading-6 text-[#a77d7d]">
               {absLibrary.libraries.length === 0
-                ? 'Connect to ABS in settings to browse your library.'
-                : 'No books found.'}
+                ? 'Once your AudioBookShelf connection is set, your libraries will show up here.'
+                : 'No books matched this search.'}
             </div>
           )}
-          <div className="grid grid-cols-1 gap-1.5">
-            {filteredBooks.map((book) => (
-              <div
-                key={book.id}
-                className={`flex items-center gap-3 rounded border px-3 py-2 transition-colors ${
-                  selecting === book.id
-                    ? 'cursor-wait border-[#3f0000] bg-[#120000] opacity-70'
-                    : selecting !== null
-                      ? 'cursor-not-allowed border-[#1a0000] bg-[#0d0000] opacity-40'
-                      : 'cursor-pointer border-[#1a0000] bg-[#0d0000] hover:border-[#3f0000] hover:bg-[#120000]'
-                }`}
-                onClick={() => selecting === null && handleSelectBook(book)}
-              >
-                {/* Cover art */}
-                {book.cover ? (
-                  <img
-                    src={book.cover}
-                    alt={book.title}
-                    className="h-10 w-8 flex-shrink-0 rounded object-cover"
-                    onError={(e) => {
-                      ;(e.target as HTMLImageElement).style.display = 'none'
-                    }}
-                  />
-                ) : (
-                  <div className="flex h-10 w-8 flex-shrink-0 items-center justify-center rounded bg-[#1a0000] text-[16px]">
-                    📚
-                  </div>
-                )}
 
-                {/* Info */}
-                <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="text-[11px] font-semibold leading-tight text-[#fef2f2] line-clamp-1">
-                    {book.title}
-                  </span>
-                  <span className="text-[10px] text-[#6b2222]">
-                    {book.authorName} · {formatDuration(book.duration)}
-                  </span>
-                </div>
-
-                {/* Status badge */}
-                <div className="flex-shrink-0">
-                  {selecting === book.id ? (
-                    <span className="rounded-[3px] bg-[#1a0000] px-1.5 py-0.5 text-[9px] text-[#6b2222]">
-                      Loading…
-                    </span>
+          {!loading && filteredBooks.length > 0 && (
+            <div className="grid gap-3">
+              {filteredBooks.map((book) => (
+                <button
+                  key={book.id}
+                  className={`flex items-center gap-4 rounded-[24px] border px-4 py-4 text-left transition-colors ${
+                    selecting === book.id
+                      ? 'cursor-wait border-[#5b2626] bg-[#1a0a0a] opacity-75'
+                      : selecting !== null
+                        ? 'cursor-not-allowed border-[#2a1515] bg-[#100606] opacity-45'
+                        : 'border-[#301717] bg-[#120707] hover:border-[#dc2626] hover:bg-[#190909]'
+                  }`}
+                  disabled={selecting !== null}
+                  onClick={() => void handleSelectBook(book)}
+                  type="button"
+                >
+                  {book.cover ? (
+                    <img
+                      alt={book.title}
+                      className="h-16 w-12 flex-shrink-0 rounded-[12px] object-cover"
+                      onError={(event) => {
+                        ;(event.target as HTMLImageElement).style.display = 'none'
+                      }}
+                      src={book.cover}
+                    />
                   ) : (
-                    subtitleBadge(book, queuedAbsIds.has(book.id))
+                    <div className="flex h-16 w-12 flex-shrink-0 items-center justify-center rounded-[12px] border border-[#3a1d1d] bg-[#1b0b0b] text-lg text-[#d8b6b6]">
+                      BK
+                    </div>
                   )}
-                </div>
-              </div>
-            ))}
-          </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold leading-6 text-[#fff1f1]">
+                      {book.title}
+                    </div>
+                    <div className="text-sm text-[#c7a2a2]">
+                      {book.authorName} - {formatDuration(book.duration)}
+                    </div>
+                  </div>
+
+                  <div className="flex-shrink-0">
+                    {selecting === book.id ? (
+                      <span className="rounded-full bg-[#251010] px-2.5 py-1 text-[11px] font-medium text-[#d3abab]">
+                        Loading...
+                      </span>
+                    ) : (
+                      <SubtitleBadge book={book} inQueue={queuedAbsIds.has(book.id)} />
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

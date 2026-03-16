@@ -16,7 +16,7 @@ export default function App(): React.JSX.Element {
 
     const unsub = window.electron.queue.onUpdated((jobs) => setJobs(jobs))
     return unsub
-  }, [])
+  }, [setJobs, setSettings])
 
   return (
     <>

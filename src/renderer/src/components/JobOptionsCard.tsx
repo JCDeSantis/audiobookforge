@@ -78,7 +78,9 @@ export function JobOptionsCard(): React.JSX.Element {
                 onClick={handlePickEpub}
               >
                 <span>
-                  {wizard.epubPath ? fileNameFromPath(wizard.epubPath) : 'Add an EPUB for vocabulary context'}
+                  {wizard.epubPath
+                    ? fileNameFromPath(wizard.epubPath)
+                    : 'Add an EPUB for vocabulary context'}
                 </span>
                 <span className="text-[#dc2626]">{wizard.epubPath ? 'Change' : 'Browse'}</span>
               </button>

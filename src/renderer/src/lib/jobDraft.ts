@@ -7,7 +7,6 @@ import type {
 import { getLocalSourceTitle } from './sourceTitle'
 
 export interface JobDraft {
-  step: 1 | 2 | 3
   source: 'local' | 'abs' | null
   audioFiles: string[]
   absItem: AbsBookSummary | null

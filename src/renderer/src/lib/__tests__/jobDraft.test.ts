@@ -3,21 +3,22 @@ import type { AbsBookSummary, WhisperModel } from '../../../../shared/types'
 import {
   buildConfirmationRows,
   canContinue,
+  type JobDraft,
   selectAbsItem,
   selectLocalFiles
 } from '../jobDraft'
 
-function createDraft(overrides: Partial<{
-  step: 1 | 2 | 3
-  source: 'local' | 'abs' | null
-  audioFiles: string[]
-  absItem: AbsBookSummary | null
-  epubPath: string | null
-  model: WhisperModel
-  outputFolder: string | null
-}> = {}) {
+function createDraft(
+  overrides: Partial<{
+    source: 'local' | 'abs' | null
+    audioFiles: string[]
+    absItem: AbsBookSummary | null
+    epubPath: string | null
+    model: WhisperModel
+    outputFolder: string | null
+  }> = {}
+): JobDraft {
   return {
-    step: 1 as const,
     source: null as 'local' | 'abs' | null,
     audioFiles: [] as string[],
     absItem: null as AbsBookSummary | null,
@@ -116,11 +117,7 @@ describe('jobDraft', () => {
 
     expect(localRows.find((row) => row.label === 'Output')?.value).toBe('C:\\Output')
     expect(localRows.find((row) => row.label === 'EPUB')?.value).toBe('book.epub')
-    expect(absRows.find((row) => row.label === 'Output')?.value).toBe(
-      'Upload to ABS automatically'
-    )
-    expect(absRows.find((row) => row.label === 'EPUB')?.value).toBe(
-      'Project Hail Mary.epub'
-    )
+    expect(absRows.find((row) => row.label === 'Output')?.value).toBe('Upload to ABS automatically')
+    expect(absRows.find((row) => row.label === 'EPUB')?.value).toBe('Project Hail Mary.epub')
   })
 })

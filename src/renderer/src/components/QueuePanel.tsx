@@ -89,7 +89,13 @@ function StatusBadge({
   return <></>
 }
 
-function JobCard({ job, quiet = false }: { job: TranscriptionJob; quiet?: boolean }): React.JSX.Element {
+function JobCard({
+  job,
+  quiet = false
+}: {
+  job: TranscriptionJob
+  quiet?: boolean
+}): React.JSX.Element {
   const { queue } = useAppStore()
   const isActive = job.id === queue.activeJobId
   const savedPaths = getSavedPaths(job)

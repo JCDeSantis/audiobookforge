@@ -19,7 +19,6 @@ import {
 interface WizardState extends JobDraft {}
 
 const defaultWizard: WizardState = {
-  step: 1,
   source: null,
   audioFiles: [],
   absItem: null,
@@ -58,10 +57,6 @@ interface AppStore {
 
   // Wizard
   wizard: WizardState
-  setWizardStep: (step: 1 | 2 | 3) => void
-  setWizardSource: (source: 'local' | 'abs') => void
-  setWizardAudioFiles: (files: string[]) => void
-  setWizardAbsItem: (item: AbsBookSummary | null) => void
   setWizardEpubPath: (path: string | null) => void
   setWizardModel: (model: WhisperModel) => void
   setWizardOutputFolder: (folder: string | null) => void
@@ -113,14 +108,7 @@ export const useAppStore = create<AppStore>((set) => ({
 
   // Wizard
   wizard: defaultWizard,
-  setWizardStep: (step) => set((state) => ({ wizard: { ...state.wizard, step } })),
-  setWizardSource: (source) => set((state) => ({ wizard: { ...state.wizard, source } })),
-  setWizardAudioFiles: (audioFiles) =>
-    set((state) => ({ wizard: { ...state.wizard, audioFiles } })),
-  setWizardAbsItem: (absItem) =>
-    set((state) => ({ wizard: { ...state.wizard, absItem } })),
-  setWizardEpubPath: (epubPath) =>
-    set((state) => ({ wizard: { ...state.wizard, epubPath } })),
+  setWizardEpubPath: (epubPath) => set((state) => ({ wizard: { ...state.wizard, epubPath } })),
   setWizardModel: (model) => set((state) => ({ wizard: { ...state.wizard, model } })),
   setWizardOutputFolder: (outputFolder) =>
     set((state) => ({ wizard: { ...state.wizard, outputFolder } })),
@@ -128,8 +116,7 @@ export const useAppStore = create<AppStore>((set) => ({
     set((state) => ({ wizard: applyLocalFileSelection(state.wizard, audioFiles) })),
   selectAbsItem: (absItem) =>
     set((state) => ({ wizard: applyAbsItemSelection(state.wizard, absItem) })),
-  clearSelectedSource: () =>
-    set((state) => ({ wizard: clearDraftSource(state.wizard) })),
+  clearSelectedSource: () => set((state) => ({ wizard: clearDraftSource(state.wizard) })),
   resetWizard: () =>
     set((state) => ({
       wizard: { ...defaultWizard, model: state.settings.defaultModel },
@@ -169,8 +156,7 @@ export const useAppStore = create<AppStore>((set) => ({
   // UI
   ui: { settingsOpen: false, confirmationOpen: false },
   setSettingsOpen: (open) => set((state) => ({ ui: { ...state.ui, settingsOpen: open } })),
-  setConfirmationOpen: (open) =>
-    set((state) => ({ ui: { ...state.ui, confirmationOpen: open } })),
+  setConfirmationOpen: (open) => set((state) => ({ ui: { ...state.ui, confirmationOpen: open } })),
   absModalOpen: false,
   setAbsModalOpen: (open) => set({ absModalOpen: open })
 }))

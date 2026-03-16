@@ -3,8 +3,9 @@ import { useAppStore } from '../store/useAppStore'
 
 export function AppHeader(): React.JSX.Element {
   const { queue, setSettingsOpen } = useAppStore()
-  const activeCount = queue.jobs.filter((job) => job.status === 'queued' || job.status === 'running')
-    .length
+  const activeCount = queue.jobs.filter(
+    (job) => job.status === 'queued' || job.status === 'running'
+  ).length
 
   return (
     <header className="border-b border-[#2f1212] bg-[#090303]/95 px-6 py-4 backdrop-blur">

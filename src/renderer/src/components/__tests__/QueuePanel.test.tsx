@@ -55,7 +55,12 @@ describe('QueuePanel', () => {
   it('keeps finished jobs collapsed until expanded', () => {
     useAppStore.getState().setJobs([
       createJob({ id: 'queued-job', title: 'Queued Book', status: 'queued' }),
-      createJob({ id: 'done-job', title: 'Finished Book', status: 'done', completedAt: Date.now() }),
+      createJob({
+        id: 'done-job',
+        title: 'Finished Book',
+        status: 'done',
+        completedAt: Date.now()
+      }),
       createJob({
         id: 'failed-job',
         title: 'Failed Book',

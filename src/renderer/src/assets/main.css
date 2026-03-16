@@ -1,28 +1,57 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 :root {
+  --color-bg: #050101;
+  --color-bg-elevated: #120707;
+  --color-bg-soft: #1a0a0a;
+  --color-border: #341616;
+  --color-border-strong: #5b2626;
+  --color-text-primary: #fff4f1;
+  --color-text-secondary: #d8b9b1;
+  --color-text-muted: #aa7f7f;
   --color-accent: #dc2626;
   --color-accent-hover: #b91c1c;
-  --color-accent-dim: #7f1d1d;
-  --color-surface: #0a0000;
-  --color-surface-raised: #120000;
-  --color-surface-border: #2a0000;
-  --color-text-primary: #fef2f2;
-  --color-text-secondary: #fca5a5;
-  --color-text-muted: #6b2222;
+  --font-ui: 'Trebuchet MS', 'Segoe UI', sans-serif;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
 }
 
 body {
-  background-color: var(--color-surface);
-  color: var(--color-text-primary);
-  font-family: system-ui, sans-serif;
   margin: 0;
   overflow: hidden;
+  background:
+    radial-gradient(circle at top, rgba(220, 38, 38, 0.14), transparent 28%),
+    linear-gradient(180deg, #080202 0%, #040101 100%);
+  color: var(--color-text-primary);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-#root {
-  width: 100vw;
-  height: 100vh;
-  display: flex;
-  overflow: hidden;
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: rgba(220, 38, 38, 0.38);
+  color: #fff5f2;
 }
