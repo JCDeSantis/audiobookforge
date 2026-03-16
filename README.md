@@ -42,7 +42,7 @@ Instead, Audiobook Forge helps create subtitle files for workflows such as:
 
 ## Interface Preview
 
-![Audiobook Forge interface preview](docs/readme-assets/interface-preview.svg)
+![Audiobook Forge interface preview](docs/readme-assets/interface-preview.png)
 
 ## Quick Start
 
