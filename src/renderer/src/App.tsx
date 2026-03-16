@@ -3,6 +3,7 @@ import { AbsLibraryModal } from './components/AbsLibraryModal'
 import { AppHeader } from './components/AppHeader'
 import { AppSettingsPanel } from './components/AppSettingsPanel'
 import { JobComposer } from './components/JobComposer'
+import { QueueConfirmationModal } from './components/QueueConfirmationModal'
 import { QueuePanel } from './components/QueuePanel'
 import { useAppStore } from './store/useAppStore'
 
@@ -29,6 +30,7 @@ export default function App(): React.JSX.Element {
       </div>
 
       {absModalOpen && <AbsLibraryModal />}
+      {ui.confirmationOpen && <QueueConfirmationModal />}
       {ui.settingsOpen && <AppSettingsPanel onClose={() => setSettingsOpen(false)} />}
     </>
   )
