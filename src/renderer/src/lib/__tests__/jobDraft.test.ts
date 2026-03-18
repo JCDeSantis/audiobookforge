@@ -3,9 +3,11 @@ import type { AbsBookSummary, WhisperModel } from '../../../../shared/types'
 import {
   buildConfirmationRows,
   buildQueueJobData,
+  buildQueueJobPayloads,
   canContinue,
   type JobDraft,
   selectAbsItem,
+  selectAbsItems,
   selectLocalFiles
 } from '../jobDraft'
 
@@ -14,6 +16,7 @@ function createDraft(
     source: 'local' | 'abs' | null
     audioFiles: string[]
     absItem: AbsBookSummary | null
+    absItems: AbsBookSummary[]
     epubPath: string | null
     model: WhisperModel
     outputFolder: string | null
@@ -23,6 +26,7 @@ function createDraft(
     source: null as 'local' | 'abs' | null,
     audioFiles: [] as string[],
     absItem: null as AbsBookSummary | null,
+    absItems: [] as AbsBookSummary[],
     epubPath: null as string | null,
     model: 'large-v3-turbo' as WhisperModel,
     outputFolder: null as string | null,
@@ -64,6 +68,7 @@ describe('jobDraft', () => {
     expect(next.source).toBe('local')
     expect(next.audioFiles).toEqual(['C:\\Audio\\book.m4b'])
     expect(next.absItem).toBeNull()
+    expect(next.absItems).toEqual([])
     expect(next.model).toBe('medium')
   })
 
@@ -82,7 +87,28 @@ describe('jobDraft', () => {
     expect(next.audioFiles).toEqual([])
     expect(next.outputFolder).toBeNull()
     expect(next.absItem?.title).toBe('Project Hail Mary')
+    expect(next.absItems).toHaveLength(1)
     expect(next.model).toBe('large-v3')
+  })
+
+  it('supports selecting multiple ABS items at once', () => {
+    const next = selectAbsItems(
+      createDraft({
+        source: 'local',
+        audioFiles: ['C:\\Audio\\part1.mp3'],
+        outputFolder: 'C:\\Output'
+      }),
+      [
+        createAbsItem(),
+        createAbsItem({ id: 'abs-2', title: 'Artemis', authorName: 'Andy Weir' })
+      ]
+    )
+
+    expect(next.source).toBe('abs')
+    expect(next.audioFiles).toEqual([])
+    expect(next.outputFolder).toBeNull()
+    expect(next.absItem?.id).toBe('abs-1')
+    expect(next.absItems.map((item) => item.id)).toEqual(['abs-1', 'abs-2'])
   })
 
   it('requires an output folder before local drafts can continue', () => {
@@ -122,6 +148,29 @@ describe('jobDraft', () => {
     expect(absRows.find((row) => row.label === 'EPUB')?.value).toBe('Project Hail Mary.epub')
   })
 
+  it('summarizes multi-book ABS selections in the confirmation rows', () => {
+    const rows = buildConfirmationRows(
+      createDraft({
+        source: 'abs',
+        absItems: [
+          createAbsItem(),
+          createAbsItem({
+            id: 'abs-2',
+            title: 'Artemis',
+            authorName: 'Andy Weir',
+            ebookPath: null
+          })
+        ],
+        epubPath: 'C:\\Books\\Shared Context.epub'
+      })
+    )
+
+    expect(rows.find((row) => row.label === 'Books')?.value).toBe('2 selected books')
+    expect(rows.find((row) => row.label === 'EPUB')?.value).toBe(
+      '1 of 2 linked from ABS, plus Shared Context.epub'
+    )
+  })
+
   it('keeps ABS queue payloads free of renderer-built download URLs', () => {
     const payload = buildQueueJobData(
       createDraft({
@@ -154,5 +203,44 @@ describe('jobDraft', () => {
 
     expect(payload.audioFiles).toEqual([])
     expect(payload.absItemId).toBe('abs-1')
+  })
+
+  it('builds one ABS queue payload per selected book', () => {
+    const payloads = buildQueueJobPayloads(
+      createDraft({
+        source: 'abs',
+        absItems: [
+          createAbsItem(),
+          createAbsItem({
+            id: 'abs-2',
+            title: 'Artemis',
+            authorName: 'Andy Weir',
+            ebookPath: null
+          })
+        ],
+        epubPath: 'C:\\Books\\Shared Context.epub',
+        model: 'medium'
+      }),
+      {
+        absUrl: 'http://abs.local',
+        defaultModel: 'large-v3-turbo'
+      }
+    )
+
+    expect(payloads).toHaveLength(2)
+    expect(payloads[0]).toMatchObject({
+      source: 'abs',
+      title: 'Project Hail Mary',
+      absItemId: 'abs-1',
+      epubPath: 'C:\\Books\\Project Hail Mary.epub',
+      model: 'medium'
+    })
+    expect(payloads[1]).toMatchObject({
+      source: 'abs',
+      title: 'Artemis',
+      absItemId: 'abs-2',
+      epubPath: 'C:\\Books\\Shared Context.epub',
+      model: 'medium'
+    })
   })
 })

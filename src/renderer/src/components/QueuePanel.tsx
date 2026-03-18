@@ -238,6 +238,14 @@ function JobCard({
               Cancel
             </button>
           )}
+          {job.status === 'queued' && !isActive && (
+            <button
+              className="rounded-full border border-[#3a1919] px-3 py-1.5 text-[#d7b0b0] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
+              onClick={handleRemove}
+            >
+              Remove
+            </button>
+          )}
           {job.status === 'failed' && (
             <button
               className="rounded-full border border-[#7f1d1d] px-3 py-1.5 text-[#ffb4b4] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"

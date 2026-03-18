@@ -211,7 +211,10 @@ export async function transcribeAudio(
       ffmpegProc.on('close', (code) => {
         signal.removeEventListener('abort', onAbort)
         activeProcess = null
-        if (signal.aborted) return
+        if (signal.aborted) {
+          resolve()
+          return
+        }
         if (code === 0) {
           resolve()
         } else {

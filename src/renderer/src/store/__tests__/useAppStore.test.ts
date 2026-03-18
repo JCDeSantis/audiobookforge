@@ -46,6 +46,7 @@ describe('useAppStore', () => {
     expect(useAppStore.getState().wizard.source).toBe('abs')
     expect(useAppStore.getState().wizard.audioFiles).toEqual([])
     expect(useAppStore.getState().wizard.outputFolder).toBeNull()
+    expect(useAppStore.getState().wizard.absItems).toHaveLength(1)
   })
 
   it('clears the selected ABS item when switching back to local files', () => {
@@ -55,6 +56,23 @@ describe('useAppStore', () => {
 
     expect(useAppStore.getState().wizard.source).toBe('local')
     expect(useAppStore.getState().wizard.absItem).toBeNull()
+    expect(useAppStore.getState().wizard.absItems).toEqual([])
+  })
+
+  it('stores multiple ABS selections in the draft', () => {
+    useAppStore
+      .getState()
+      .selectAbsItems([
+        createAbsItem(),
+        createAbsItem({ id: 'abs-2', title: "Caliban's War" })
+      ])
+
+    expect(useAppStore.getState().wizard.source).toBe('abs')
+    expect(useAppStore.getState().wizard.absItem?.id).toBe('abs-1')
+    expect(useAppStore.getState().wizard.absItems.map((item) => item.id)).toEqual([
+      'abs-1',
+      'abs-2'
+    ])
   })
 
   it('tracks confirmation modal state without resetting the draft', () => {

@@ -16,6 +16,20 @@ function getComposerModelOptionLabel(model: (typeof WHISPER_MODELS)[number]): st
 export function JobOptionsCard(): React.JSX.Element {
   const { wizard, setWizardModel, setWizardOutputFolder, setWizardEpubPath } = useAppStore()
   const isAbs = wizard.source === 'abs'
+  const selectedAbsItems = wizard.absItems.length > 0 ? wizard.absItems : wizard.absItem ? [wizard.absItem] : []
+  const linkedAbsItems = selectedAbsItems.filter((item) => item.ebookPath)
+  const hasSingleLinkedEpub = selectedAbsItems.length === 1 && Boolean(linkedAbsItems[0]?.ebookPath)
+  const linkedEpub = hasSingleLinkedEpub ? linkedAbsItems[0]?.ebookPath ?? null : null
+  const hasMixedLinkedEpubs =
+    selectedAbsItems.length > 1 &&
+    linkedAbsItems.length > 0 &&
+    linkedAbsItems.length < selectedAbsItems.length
+  const linkedEpubSummary =
+    selectedAbsItems.length > 1 && linkedAbsItems.length > 0
+      ? linkedAbsItems.length === selectedAbsItems.length
+        ? `All ${selectedAbsItems.length} selected books have linked ABS EPUB files.`
+        : `${linkedAbsItems.length} of ${selectedAbsItems.length} selected books have linked ABS EPUB files.`
+      : null
 
   const handlePickOutputFolder = async (): Promise<void> => {
     const folder = await window.electron.files.pickOutputFolder()
@@ -30,8 +44,6 @@ export function JobOptionsCard(): React.JSX.Element {
       setWizardEpubPath(path)
     }
   }
-
-  const linkedEpub = isAbs && wizard.absItem?.ebookPath ? wizard.absItem.ebookPath : null
 
   return (
     <section className="rounded-[28px] border border-[#341414] bg-[#120707] p-5 shadow-[0_20px_40px_rgba(0,0,0,0.25)]">
@@ -71,24 +83,41 @@ export function JobOptionsCard(): React.JSX.Element {
         {wizard.source && (
           <div>
             <div className="mb-2 text-sm font-medium text-[#f9e7e7]">
-              EPUB {linkedEpub ? '(linked from ABS)' : '(optional)'}
+              EPUB {linkedEpub || linkedEpubSummary ? '(linked from ABS)' : '(optional)'}
             </div>
             {linkedEpub ? (
               <div className="rounded-[18px] border border-[#4a1d1d] bg-[#1a0909] px-4 py-3 text-sm text-[#f0d4d4]">
                 {fileNameFromPath(linkedEpub)}
               </div>
             ) : (
-              <button
-                className="flex w-full items-center justify-between rounded-[18px] border border-[#4a1d1d] bg-[#1a0909] px-4 py-3 text-left text-sm text-[#f0d4d4] transition-colors hover:border-[#dc2626]"
-                onClick={handlePickEpub}
-              >
-                <span>
-                  {wizard.epubPath
-                    ? fileNameFromPath(wizard.epubPath)
-                    : 'Add an EPUB for vocabulary context'}
-                </span>
-                <span className="text-[#dc2626]">{wizard.epubPath ? 'Change' : 'Browse'}</span>
-              </button>
+              <div className="space-y-3">
+                {linkedEpubSummary && (
+                  <div className="rounded-[18px] border border-[#4a1d1d] bg-[#1a0909] px-4 py-3 text-sm text-[#f0d4d4]">
+                    {linkedEpubSummary}
+                    {hasMixedLinkedEpubs && wizard.epubPath && (
+                      <span className="block pt-2 text-[#d5b1b1]">
+                        Shared fallback: {fileNameFromPath(wizard.epubPath)}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {(!linkedEpubSummary || hasMixedLinkedEpubs) && (
+                  <button
+                    className="flex w-full items-center justify-between rounded-[18px] border border-[#4a1d1d] bg-[#1a0909] px-4 py-3 text-left text-sm text-[#f0d4d4] transition-colors hover:border-[#dc2626]"
+                    onClick={handlePickEpub}
+                  >
+                    <span>
+                      {wizard.epubPath
+                        ? fileNameFromPath(wizard.epubPath)
+                        : isAbs && hasMixedLinkedEpubs
+                          ? 'Add a shared EPUB for books without one'
+                          : 'Add an EPUB for vocabulary context'}
+                    </span>
+                    <span className="text-[#dc2626]">{wizard.epubPath ? 'Change' : 'Browse'}</span>
+                  </button>
+                )}
+              </div>
             )}
           </div>
         )}

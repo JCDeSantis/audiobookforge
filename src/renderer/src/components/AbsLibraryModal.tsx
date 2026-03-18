@@ -92,7 +92,7 @@ export function AbsLibraryModal(): React.JSX.Element {
     setAbsLibraries,
     setAbsBooks,
     setAbsConnected,
-    selectAbsItem,
+    selectAbsItems,
     setAbsModalOpen,
     setSettingsOpen
   } = useAppStore()
@@ -102,7 +102,8 @@ export function AbsLibraryModal(): React.JSX.Element {
   const [sortBy, setSortBy] = useState<BookSortOption>('missing-srt')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [selecting, setSelecting] = useState<string | null>(null)
+  const [multiSelectEnabled, setMultiSelectEnabled] = useState(false)
+  const [selectedBooks, setSelectedBooks] = useState<AbsBook[]>([])
 
   const queuedAbsIds = new Set(
     queue.jobs
@@ -112,6 +113,8 @@ export function AbsLibraryModal(): React.JSX.Element {
       .map((job) => job.absItemId)
       .filter(Boolean) as string[]
   )
+  const selectedBookIds = new Set(selectedBooks.map((book) => book.id))
+  const selectedBookOrder = new Map(selectedBooks.map((book, index) => [book.id, index + 1]))
 
   const handleOpenSettings = (): void => {
     setAbsModalOpen(false)
@@ -215,30 +218,38 @@ export function AbsLibraryModal(): React.JSX.Element {
     : currentBooks
   const visibleBooks = sortBooks(filteredBooks, sortBy)
 
-  const handleSelectBook = async (book: AbsBook): Promise<void> => {
-    setSelecting(book.id)
-    try {
-      const fullBook = await window.electron.abs.getBook(book.id)
-      selectAbsItem({
-        id: fullBook.id,
-        libraryId: fullBook.libraryId,
-        folderId: fullBook.folderId,
-        relPath: fullBook.relPath,
-        isFile: fullBook.isFile,
-        title: fullBook.title,
-        authorName: fullBook.authorName,
-        duration: fullBook.duration,
-        cover: fullBook.cover,
-        hasSubtitles: fullBook.hasSubtitles,
-        ebookPath: fullBook.ebookPath,
-        audioFiles: fullBook.audioFiles
-      })
-      setAbsModalOpen(false)
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : 'Failed to load book details.')
-    } finally {
-      setSelecting(null)
+  const handleToggleMultiSelect = (): void => {
+    setMultiSelectEnabled((current) => {
+      if (current) {
+        setSelectedBooks([])
+      }
+
+      return !current
+    })
+  }
+
+  const handleSelectBook = (book: AbsBook): void => {
+    selectAbsItems([book])
+    setAbsModalOpen(false)
+  }
+
+  const handleToggleBookSelection = (book: AbsBook): void => {
+    setSelectedBooks((current) =>
+      current.some((selected) => selected.id === book.id)
+        ? current.filter((selected) => selected.id !== book.id)
+        : [...current, book]
+    )
+  }
+
+  const handleUseSelectedBooks = (): void => {
+    if (selectedBooks.length === 0) {
+      return
     }
+
+    selectAbsItems(selectedBooks)
+    setSelectedBooks([])
+    setMultiSelectEnabled(false)
+    setAbsModalOpen(false)
   }
 
   return (
@@ -257,13 +268,31 @@ export function AbsLibraryModal(): React.JSX.Element {
             <h2 id="abs-library-title" className="mt-3 text-2xl font-semibold text-[#fff4f4]">
               AudioBookShelf Library
             </h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-[#d9b7b7]">
-              Pick a book from your library, scan covers faster, and sort the catalog around the
-              titles that still need subtitles.
-            </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {multiSelectEnabled && (
+              <button
+                className="rounded-full border border-[#8a2d2d] bg-[#2a0f0f] px-4 py-2 text-sm font-medium text-[#fff0f0] shadow-[0_10px_24px_rgba(120,20,20,0.18)] transition-colors hover:border-[#dc2626] hover:bg-[#341212] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={selectedBooks.length === 0}
+                onClick={handleUseSelectedBooks}
+                type="button"
+              >
+                Add Selected ({selectedBooks.length})
+              </button>
+            )}
+            <button
+              className={`rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                multiSelectEnabled
+                  ? 'border-[#8a2d2d] bg-[#2a0f0f] text-[#fff1f1] shadow-[0_10px_24px_rgba(120,20,20,0.18)] hover:border-[#dc2626] hover:bg-[#341212]'
+                  : 'border-[#5a2626] bg-[#170909] text-[#f0d0d0] hover:border-[#dc2626] hover:bg-[#210c0c] hover:text-[#fff4f4]'
+              }`}
+              disabled={loading || !settings.absUrl}
+              onClick={handleToggleMultiSelect}
+              type="button"
+            >
+              {multiSelectEnabled ? 'Exit Batch Select' : 'Batch Select'}
+            </button>
             <button
               className="rounded-full border border-[#4b2222] px-4 py-2 text-sm text-[#f0d0d0] transition-colors hover:border-[#dc2626] hover:text-[#fff4f4] disabled:cursor-not-allowed disabled:opacity-50"
               disabled={loading || !settings.absUrl}
@@ -350,7 +379,13 @@ export function AbsLibraryModal(): React.JSX.Element {
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-xs uppercase tracking-[0.18em] text-[#9f7373]">
             <span>{formatBookCount(visibleBooks.length)}</span>
-            <span>{selectedLibraryId ? 'Click any title to load it into the composer' : ''}</span>
+            <span>
+              {multiSelectEnabled
+                ? `${selectedBooks.length} selected${selectedLibraryId ? ' - click titles to toggle them' : ''}`
+                : selectedLibraryId
+                  ? 'Click any title to load it into the composer'
+                  : ''}
+            </span>
           </div>
         </div>
 
@@ -372,22 +407,22 @@ export function AbsLibraryModal(): React.JSX.Element {
           {!loading && visibleBooks.length > 0 && (
             <div className="grid gap-3 md:grid-cols-3">
               {visibleBooks.map((book) => {
-                const isSelectingThisBook = selecting === book.id
-                const isAnotherBookSelecting = selecting !== null && !isSelectingThisBook
                 const isQueued = queuedAbsIds.has(book.id)
+                const isSelected = selectedBookIds.has(book.id)
+                const selectionNumber = selectedBookOrder.get(book.id)
 
                 return (
                   <button
                     key={book.id}
                     className={`flex h-full flex-col rounded-[22px] border px-4 py-3.5 text-left transition-all ${
-                      isSelectingThisBook
-                        ? 'cursor-wait border-[#5b2626] bg-[#1a0a0a] opacity-80'
-                        : isAnotherBookSelecting
-                          ? 'cursor-not-allowed border-[#2a1515] bg-[#100606] opacity-45'
-                          : 'border-[#301717] bg-[linear-gradient(180deg,#150808_0%,#100505_100%)] hover:border-[#dc2626] hover:bg-[#190909]'
+                      isSelected
+                        ? 'border-[#dc2626] bg-[#1c0a0a] shadow-[0_16px_40px_rgba(120,20,20,0.22)]'
+                        : 'border-[#301717] bg-[linear-gradient(180deg,#150808_0%,#100505_100%)] hover:border-[#dc2626] hover:bg-[#190909]'
                     }`}
-                    disabled={selecting !== null}
-                    onClick={() => void handleSelectBook(book)}
+                    aria-pressed={multiSelectEnabled ? isSelected : undefined}
+                    onClick={() =>
+                      multiSelectEnabled ? handleToggleBookSelection(book) : handleSelectBook(book)
+                    }
                     type="button"
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -399,9 +434,9 @@ export function AbsLibraryModal(): React.JSX.Element {
                       </div>
 
                       <div className="flex-shrink-0">
-                        {isSelectingThisBook ? (
-                          <div className="rounded-full border border-[#5b2626] bg-[#1d0a0a]/95 px-2.5 py-1 text-[11px] font-medium text-[#ffd5d5]">
-                            Loading...
+                        {isSelected && selectionNumber ? (
+                          <div className="rounded-full border border-[#7f1d1d] bg-[#2a0f0f]/95 px-2.5 py-1 text-[11px] font-medium text-[#ffe2e2]">
+                            Selected {selectionNumber}
                           </div>
                         ) : (
                           <SubtitleBadge book={book} inQueue={isQueued} />

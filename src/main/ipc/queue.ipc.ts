@@ -652,4 +652,6 @@ export function registerQueueIpc(): void {
     )
     saveAndBroadcast()
   })
+
+  void runNext()
 }

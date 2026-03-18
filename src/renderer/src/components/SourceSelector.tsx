@@ -12,12 +12,22 @@ export function SourceSelector(): React.JSX.Element {
     setSettingsOpen
   } = useAppStore()
 
+  const absSelectionCount = wizard.absItems.length
+  const isMultiAbsSelection = wizard.source === 'abs' && absSelectionCount > 1
   const sourceLabel =
-    wizard.source === 'abs' && wizard.absItem
-      ? `${wizard.absItem.title} - ${wizard.absItem.authorName}`
+    wizard.source === 'abs' && isMultiAbsSelection
+      ? `${absSelectionCount} AudioBookShelf titles selected`
+      : wizard.source === 'abs' && wizard.absItem
+        ? `${wizard.absItem.title} - ${wizard.absItem.authorName}`
       : wizard.source === 'local' && wizard.audioFiles.length > 0
         ? getLocalSourceTitle(wizard.audioFiles)
         : ''
+  const sourceDescription =
+    wizard.source === 'abs'
+      ? isMultiAbsSelection
+        ? 'Each selected AudioBookShelf title will queue as its own job with the same options.'
+        : 'AudioBookShelf library item'
+      : 'Local audiobook files'
 
   const handleBrowseFiles = async (): Promise<void> => {
     const paths = await window.electron.files.pickAudio()
@@ -44,9 +54,7 @@ export function SourceSelector(): React.JSX.Element {
               Selected Source
             </div>
             <div className="mt-2 text-lg font-semibold text-[#fff3f3]">{sourceLabel}</div>
-            <div className="mt-1 text-sm text-[#caacac]">
-              {wizard.source === 'abs' ? 'AudioBookShelf library item' : 'Local audiobook files'}
-            </div>
+            <div className="mt-1 max-w-2xl text-sm text-[#caacac]">{sourceDescription}</div>
           </div>
 
           <button

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AbsBookSummary, TranscriptionJob } from '../../../../shared/types'
 import { QueueConfirmationModal } from '../QueueConfirmationModal'
@@ -139,6 +139,65 @@ describe('QueueConfirmationModal', () => {
       absFolderId: 'folder-1',
       absAuthorName: 'Pierce Brown',
       epubPath: 'C:\\Books\\Red Rising.epub',
+      model: 'large-v3-turbo'
+    })
+  })
+
+  it('submits one queue job per selected ABS book', async () => {
+    const addMock = vi
+      .fn<typeof window.electron.queue.add>()
+      .mockResolvedValue(createQueuedJob({ source: 'abs', absItemId: 'abs-1' }))
+
+    window.electron.queue.add = addMock
+
+    act(() => {
+      useAppStore.getState().setSettings({
+        absUrl: 'http://abs.local/',
+        defaultModel: 'large-v3-turbo'
+      })
+      useAppStore.getState().selectAbsItems([
+        createAbsItem(),
+        createAbsItem({
+          id: 'abs-2',
+          title: 'Golden Son',
+          authorName: 'Pierce Brown',
+          ebookPath: null
+        })
+      ])
+      useAppStore.getState().setWizardEpubPath('C:\\Books\\Shared Context.epub')
+      useAppStore.getState().setConfirmationOpen(true)
+    })
+
+    render(<QueueConfirmationModal />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add 2 Jobs to Queue' }))
+
+    await waitFor(() => {
+      expect(addMock).toHaveBeenCalledTimes(2)
+    })
+
+    expect(addMock).toHaveBeenNthCalledWith(1, {
+      source: 'abs',
+      title: 'Red Rising',
+      audioFiles: [],
+      outputPath: null,
+      absItemId: 'abs-1',
+      absLibraryId: 'library-1',
+      absFolderId: 'folder-1',
+      absAuthorName: 'Pierce Brown',
+      epubPath: 'C:\\Books\\Red Rising.epub',
+      model: 'large-v3-turbo'
+    })
+    expect(addMock).toHaveBeenNthCalledWith(2, {
+      source: 'abs',
+      title: 'Golden Son',
+      audioFiles: [],
+      outputPath: null,
+      absItemId: 'abs-2',
+      absLibraryId: 'library-1',
+      absFolderId: 'folder-1',
+      absAuthorName: 'Pierce Brown',
+      epubPath: 'C:\\Books\\Shared Context.epub',
       model: 'large-v3-turbo'
     })
   })

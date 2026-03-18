@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import type { AbsBook } from '../../../../shared/types'
 import { AbsLibraryModal } from '../AbsLibraryModal'
 import { useAppStore } from '../../store/useAppStore'
@@ -64,13 +64,6 @@ const books: AbsBook[] = [
 describe('AudioBookShelf library modal', () => {
   beforeEach(() => {
     useAppStore.setState(initialState, true)
-    window.electron.abs.getBook = vi.fn(async (itemId: string) => {
-      const matchingBook = books.find((book) => book.id === itemId)
-      if (!matchingBook) {
-        throw new Error('Book not found')
-      }
-      return matchingBook
-    })
 
     useAppStore.setState({
       settings: { absUrl: 'http://abs.local', defaultModel: 'large-v3-turbo' },
@@ -121,21 +114,30 @@ describe('AudioBookShelf library modal', () => {
   })
 
   it('selects a grid card and loads it back into the composer', async () => {
-    const getBookMock = vi.fn(async (itemId: string) => {
-      const matchingBook = books.find((book) => book.id === itemId)
-      if (!matchingBook) {
-        throw new Error('Book not found')
-      }
-      return matchingBook
-    })
-    window.electron.abs.getBook = getBookMock
-
     render(<AbsLibraryModal />)
 
     fireEvent.click(await screen.findByRole('button', { name: /Project Hail Mary/i }))
 
     await waitFor(() => {
-      expect(getBookMock).toHaveBeenCalledWith('book-3')
+      expect(useAppStore.getState().wizard.absItem?.id).toBe('book-3')
+      expect(useAppStore.getState().wizard.absItems.map((item) => item.id)).toEqual(['book-3'])
+      expect(useAppStore.getState().absModalOpen).toBe(false)
+    })
+  })
+
+  it('supports multi-select and loads several books into the composer', async () => {
+    render(<AbsLibraryModal />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Batch Select' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Project Hail Mary/i }))
+    fireEvent.click(screen.getByRole('button', { name: /The Way of Kings/i }))
+    fireEvent.click(screen.getByRole('button', { name: 'Add Selected (2)' }))
+
+    await waitFor(() => {
+      expect(useAppStore.getState().wizard.absItems.map((item) => item.id)).toEqual([
+        'book-3',
+        'book-1'
+      ])
       expect(useAppStore.getState().wizard.absItem?.id).toBe('book-3')
       expect(useAppStore.getState().absModalOpen).toBe(false)
     })

@@ -204,4 +204,19 @@ describe('QueuePanel', () => {
     expect(screen.getByText('Running 68%')).toBeInTheDocument()
     expect(screen.getByText('42%')).toBeInTheDocument()
   })
+
+  it('lets queued jobs be removed directly from the active jobs section', () => {
+    const removeMock = vi.fn<typeof window.electron.queue.remove>()
+    window.electron.queue.remove = removeMock
+
+    useAppStore.getState().setJobs([
+      createJob({ id: 'queued-job', title: 'Queued Book', status: 'queued' })
+    ])
+
+    render(<QueuePanel />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+
+    expect(removeMock).toHaveBeenCalledWith('queued-job')
+  })
 })

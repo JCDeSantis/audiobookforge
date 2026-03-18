@@ -10,6 +10,7 @@ import type {
 import {
   clearSelectedSource as clearDraftSource,
   selectAbsItem as applyAbsItemSelection,
+  selectAbsItems as applyAbsItemsSelection,
   selectLocalFiles as applyLocalFileSelection,
   type JobDraft
 } from '../lib/jobDraft'
@@ -22,6 +23,7 @@ const defaultWizard: WizardState = {
   source: null,
   audioFiles: [],
   absItem: null,
+  absItems: [],
   epubPath: null,
   model: 'large-v3-turbo',
   outputFolder: null
@@ -62,6 +64,7 @@ interface AppStore {
   setWizardOutputFolder: (folder: string | null) => void
   selectLocalFiles: (files: string[]) => void
   selectAbsItem: (item: AbsBookSummary) => void
+  selectAbsItems: (items: AbsBookSummary[]) => void
   clearSelectedSource: () => void
   resetWizard: () => void
 
@@ -89,6 +92,7 @@ function isFreshDraft(wizard: WizardState, defaultModel: WhisperModel): boolean 
     wizard.source === null &&
     wizard.audioFiles.length === 0 &&
     wizard.absItem === null &&
+    wizard.absItems.length === 0 &&
     wizard.epubPath === null &&
     wizard.outputFolder === null &&
     wizard.model === defaultModel
@@ -116,6 +120,8 @@ export const useAppStore = create<AppStore>((set) => ({
     set((state) => ({ wizard: applyLocalFileSelection(state.wizard, audioFiles) })),
   selectAbsItem: (absItem) =>
     set((state) => ({ wizard: applyAbsItemSelection(state.wizard, absItem) })),
+  selectAbsItems: (absItems) =>
+    set((state) => ({ wizard: applyAbsItemsSelection(state.wizard, absItems) })),
   clearSelectedSource: () => set((state) => ({ wizard: clearDraftSource(state.wizard) })),
   resetWizard: () =>
     set((state) => ({
