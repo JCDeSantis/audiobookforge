@@ -1,6 +1,6 @@
 # Audiobook Forge
 
-![Version](https://img.shields.io/badge/version-v1.0.2-d92a3d?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-v1.0.3-d92a3d?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/platform-Windows-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 ![License](https://img.shields.io/badge/license-MIT-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 
@@ -145,7 +145,7 @@ This repo includes GitHub Actions-based release automation for Windows builds:
 Release behavior:
 
 - Pushes and pull requests run validation
-- Version tags such as `v1.0.2` build Windows release assets
+- Version tags such as `v1.0.3` build Windows release assets
 - The release workflow uploads both the installer and the portable unpacked zip to GitHub Releases
 - Workflow dispatch can be used for manual release builds
 
