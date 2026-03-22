@@ -5,6 +5,13 @@ export interface ProbeResult {
   format: string
   tags: Record<string, string>
   hasCoverArt: boolean
+  chapters: ProbeChapter[]
+}
+
+export interface ProbeChapter {
+  startSec: number
+  endSec: number
+  title: string | null
 }
 
 // ─── Whisper ────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { sep } from 'path'
-import type { ProbeResult } from '../../shared/types'
+import type { ProbeChapter, ProbeResult } from '../../shared/types'
 
 let nvencCache: boolean | null = null
 
@@ -45,22 +45,41 @@ export async function probeFile(filePath: string): Promise<ProbeResult> {
     '-print_format', 'json',
     '-show_format',
     '-show_streams',
+    '-show_chapters',
     filePath
   ])
 
   const data = JSON.parse(stdout)
   const format = data.format ?? {}
   const streams: Array<{ codec_type: string; codec_name: string }> = data.streams ?? []
+  const chapters: Array<{
+    start_time?: string
+    end_time?: string
+    tags?: Record<string, string>
+  }> = data.chapters ?? []
 
   const hasCoverArt = streams.some(
     (s) => s.codec_type === 'video' && ['mjpeg', 'png', 'bmp'].includes(s.codec_name)
   )
 
+  const parsedChapters: ProbeChapter[] = chapters
+    .map((chapter) => ({
+      startSec: parseFloat(chapter.start_time ?? '0'),
+      endSec: parseFloat(chapter.end_time ?? '0'),
+      title:
+        typeof chapter.tags?.title === 'string' && chapter.tags.title.trim().length > 0
+          ? chapter.tags.title.trim()
+          : null
+    }))
+    .filter((chapter) => Number.isFinite(chapter.startSec) && Number.isFinite(chapter.endSec))
+    .filter((chapter) => chapter.endSec > chapter.startSec)
+
   return {
     duration: parseFloat(format.duration ?? '0'),
     format: format.format_name ?? 'unknown',
     tags: format.tags ?? {},
-    hasCoverArt
+    hasCoverArt,
+    chapters: parsedChapters
   }
 }
 

@@ -186,18 +186,32 @@ export function deleteBinary(): void {
   }
 }
 
+type DownloadBinaryOptions = {
+  forceCpu?: boolean
+  replaceExisting?: boolean
+}
+
 export async function downloadBinary(
   onProgress: (percent: number, message: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  options: DownloadBinaryOptions = {}
 ): Promise<void> {
+  const { forceCpu = false, replaceExisting = false } = options
   const binDir = getBinDir()
+
+  if (replaceExisting && existsSync(binDir)) {
+    rmSync(binDir, { recursive: true, force: true })
+  }
+
   mkdirSync(binDir, { recursive: true })
 
   const zipPath = join(binDir, 'whisper-bin.zip')
 
   // Detect GPU and look up CUDA asset URL in parallel
   onProgress(0, 'Checking system...')
-  const [hasGpu, cudaUrl] = await Promise.all([detectNvidiaGpu(), getCudaAssetUrl()])
+  const [hasGpu, cudaUrl] = forceCpu
+    ? [false, null]
+    : await Promise.all([detectNvidiaGpu(), getCudaAssetUrl()])
 
   if (signal?.aborted) throw new Error('Cancelled')
 

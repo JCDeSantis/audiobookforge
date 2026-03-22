@@ -7,15 +7,47 @@ import axios from 'axios'
 import { app } from 'electron'
 import { getWhisperExe, isBinaryDownloaded, downloadBinary, isGpuEnabled } from './binary'
 import { getModelPath, getModelUrl, isModelDownloaded, getModelDir, WHISPER_MODELS } from './models'
-import { getFfmpegPath, sumDurations } from '../ffmpeg/probe'
+import { getFfmpegPath, probeFile, sumDurations } from '../ffmpeg/probe'
 import { createTempDir, createConcatListFile, cleanupTempDir } from '../ffmpeg/concat'
-import { parseSilences, buildSegments, offsetSrtContent, mergeSrts } from './segments'
+import {
+  parseSilences,
+  buildSegments,
+  buildOverlappingSegments,
+  dedupeSubtitleCues,
+  findLargeInternalGaps,
+  offsetSrtContent,
+  mergeSrts,
+  parseSrtContent,
+  replaceCueRange,
+  secondsToTimestamp,
+  serializeSrtCues
+} from './segments'
 import type { WhisperModel, WhisperProgressEvent } from '../../shared/types'
+import type { AudioSegment, SubtitleCue } from './segments'
+import { isMissingWindowsDependencyExitCode } from '../../shared/whisperExitCodes'
 
 let activeProcess: ChildProcess | null = null
 let activeAbortController: AbortController | null = null
 
 type ProgressCallback = (progress: Omit<WhisperProgressEvent, 'jobId'>) => void
+
+const LARGE_GAP_THRESHOLD_S = 10
+const GAP_REPAIR_CONTEXT_S = 6
+const WINDOW_RETRY_DURATION_S = 240
+const WINDOW_RETRY_OVERLAP_S = 8
+const MAX_GAP_REPAIRS_PER_SEGMENT = 6
+
+class WhisperSegmentProcessError extends Error {
+  exitCode: number | null
+  stderr: string
+
+  constructor(message: string, exitCode: number | null, stderr: string) {
+    super(message)
+    this.name = 'WhisperSegmentProcessError'
+    this.exitCode = exitCode
+    this.stderr = stderr
+  }
+}
 
 function hhmmssToSeconds(time: string): number {
   const parts = time.split(':').map(parseFloat)
@@ -24,6 +56,42 @@ function hhmmssToSeconds(time: string): number {
 
 function getThreadCount(): number {
   return Math.max(1, Math.min(cpus().length, 8))
+}
+
+function offsetSubtitleCues(cues: SubtitleCue[], offsetSec: number): SubtitleCue[] {
+  return cues.map((cue) => ({
+    startSec: cue.startSec + offsetSec,
+    endSec: cue.endSec + offsetSec,
+    text: cue.text
+  }))
+}
+
+function getCueCoverageSeconds(cues: SubtitleCue[]): number {
+  return cues.reduce((total, cue) => total + Math.max(0, cue.endSec - cue.startSec), 0)
+}
+
+function shouldPreferCandidate(currentCues: SubtitleCue[], candidateCues: SubtitleCue[]): boolean {
+  if (candidateCues.length === 0) {
+    return false
+  }
+  if (currentCues.length === 0) {
+    return true
+  }
+
+  const currentGapCount = findLargeInternalGaps(currentCues, LARGE_GAP_THRESHOLD_S).length
+  const candidateGapCount = findLargeInternalGaps(candidateCues, LARGE_GAP_THRESHOLD_S).length
+  const currentCoverage = getCueCoverageSeconds(currentCues)
+  const candidateCoverage = getCueCoverageSeconds(candidateCues)
+
+  if (candidateGapCount < currentGapCount && candidateCoverage + 20 >= currentCoverage) {
+    return true
+  }
+
+  if (candidateCoverage > currentCoverage + 5) {
+    return true
+  }
+
+  return candidateGapCount === currentGapCount && candidateCoverage > currentCoverage
 }
 
 async function downloadModel(
@@ -121,13 +189,15 @@ export async function transcribeAudio(
   let tempDir: string | null = null
 
   try {
+    const reportBinaryDownloadProgress = (percent: number): void => {
+      if (!signal.aborted) {
+        onProgress({ phase: 'downloading-binary', percent })
+      }
+    }
+
     if (!isBinaryDownloaded()) {
       onProgress({ phase: 'downloading-binary', percent: 0 })
-      await downloadBinary((percent) => {
-        if (!signal.aborted) {
-          onProgress({ phase: 'downloading-binary', percent })
-        }
-      }, signal)
+      await downloadBinary(reportBinaryDownloadProgress, signal)
     }
 
     if (signal.aborted) throw new Error('Cancelled')
@@ -140,10 +210,10 @@ export async function transcribeAudio(
 
     if (signal.aborted) throw new Error('Cancelled')
 
-    const gpuEnabled = isGpuEnabled()
-    const totalDuration = await sumDurations(audioPaths)
+    let gpuEnabled = isGpuEnabled()
+    const inputDuration = await sumDurations(audioPaths)
 
-    if (totalDuration <= 0) {
+    if (inputDuration <= 0) {
       throw new Error(
         'The audio duration resolved to 0 seconds. This usually means the ABS download URL or audio input is invalid.'
       )
@@ -152,8 +222,12 @@ export async function transcribeAudio(
     if (signal.aborted) throw new Error('Cancelled')
 
     tempDir = await createTempDir()
-    const listPath = await createConcatListFile(audioPaths, tempDir)
-    const fullWavPath = join(tempDir, 'full.wav')
+    if (!tempDir) {
+      throw new Error('Failed to create a temporary working directory.')
+    }
+    const workingTempDir = tempDir
+    const listPath = await createConcatListFile(audioPaths, workingTempDir)
+    const fullWavPath = join(workingTempDir, 'full.wav')
 
     const outputDir = join(app.getPath('userData'), 'whisper', 'output')
     mkdirSync(outputDir, { recursive: true })
@@ -161,7 +235,7 @@ export async function transcribeAudio(
     const srtPath = `${srtBase}.srt`
 
     const ffmpeg = getFfmpegPath()
-    const whisperExe = getWhisperExe()!
+    let whisperExe = getWhisperExe()!
     const modelPath = getModelPath(model)
     const threads = getThreadCount()
 
@@ -198,11 +272,11 @@ export async function transcribeAudio(
         const text = chunk.toString()
         ffmpegErr += text
 
-        if (totalDuration > 0) {
+        if (inputDuration > 0) {
           const match = text.match(/time=(\d+):(\d+):(\d+)/)
           if (match) {
             const elapsed = parseInt(match[1]) * 3600 + parseInt(match[2]) * 60 + parseInt(match[3])
-            const pct = Math.min(Math.round((elapsed / totalDuration) * 100), 99)
+            const pct = Math.min(Math.round((elapsed / inputDuration) * 100), 99)
             onProgress({ phase: 'preparing', percent: pct })
           }
         }
@@ -226,6 +300,13 @@ export async function transcribeAudio(
     })
 
     if (signal.aborted) throw new Error('Cancelled')
+
+    const preparedProbe = await probeFile(fullWavPath)
+    const totalDuration = preparedProbe.duration > 0 ? preparedProbe.duration : inputDuration
+
+    if (totalDuration <= 0) {
+      throw new Error('The prepared audio duration resolved to 0 seconds.')
+    }
 
     onProgress({ phase: 'segmenting', percent: 0 })
 
@@ -267,28 +348,29 @@ export async function transcribeAudio(
     const segments = buildSegments(silences, totalDuration)
     onProgress({ phase: 'segmenting', percent: 100, segmentCount: segments.length })
 
-    const srtContents: string[] = []
-
-    for (const seg of segments) {
-      if (signal.aborted) throw new Error('Cancelled')
-
-      const segPad = seg.index.toString().padStart(3, '0')
-      const segWavPath = join(tempDir, `segment_${segPad}.wav`)
-      const segSrtBase = join(tempDir, `segment_${segPad}`)
+    const transcribeWindow = async (
+      fileBaseName: string,
+      startSec: number,
+      durationSec: number,
+      progressSegment: AudioSegment,
+      usePrompt: boolean
+    ): Promise<string> => {
+      const wavPath = join(workingTempDir, `${fileBaseName}.wav`)
+      const srtBasePath = join(workingTempDir, fileBaseName)
 
       await new Promise<void>((resolve, reject) => {
         const extractProc = spawn(ffmpeg, [
           '-hide_banner',
           '-y',
           '-ss',
-          String(seg.startSec),
+          String(startSec),
           '-t',
-          String(seg.durationSec),
+          String(durationSec),
           '-i',
           fullWavPath,
           '-c:a',
           'copy',
-          segWavPath
+          wavPath
         ])
         activeProcess = extractProc
 
@@ -313,131 +395,269 @@ export async function transcribeAudio(
 
       if (signal.aborted) throw new Error('Cancelled')
 
-      const whisperArgs: string[] = [
-        '-m',
-        modelPath,
-        '-f',
-        segWavPath,
-        '-osrt',
-        '-of',
-        segSrtBase,
-        '-l',
-        'en',
-        '-pp',
-        '-t',
-        String(threads)
-      ]
+      const runWhisperWindow = async (useGpuForAttempt: boolean): Promise<void> => {
+        const whisperArgs: string[] = [
+          '-m',
+          modelPath,
+          '-f',
+          wavPath,
+          '-osrt',
+          '-of',
+          srtBasePath,
+          '-l',
+          'en',
+          '-pp',
+          '-t',
+          String(threads)
+        ]
 
-      if (promptText) {
-        whisperArgs.push('--prompt', promptText)
-      }
-      if (!gpuEnabled) {
-        whisperArgs.push('--no-gpu')
-      }
-
-      await new Promise<void>((resolve, reject) => {
-        const whisperProc = spawn(whisperExe, whisperArgs, { cwd: dirname(whisperExe) })
-        activeProcess = whisperProc
-
-        const onAbort = (): void => {
-          whisperProc.kill('SIGTERM')
+        if (usePrompt && promptText) {
+          whisperArgs.push('--prompt', promptText)
+        }
+        if (!useGpuForAttempt) {
+          whisperArgs.push('--no-gpu')
         }
 
-        signal.addEventListener('abort', onAbort, { once: true })
+        await new Promise<void>((resolve, reject) => {
+          const whisperProc = spawn(whisperExe, whisperArgs, { cwd: dirname(whisperExe) })
+          activeProcess = whisperProc
 
-        let whisperErr = ''
-        whisperProc.stderr?.on('data', (chunk: Buffer) => {
-          const text = chunk.toString()
-          whisperErr += text
-
-          const progMatch = text.match(/progress\s*=\s*(\d+)%/)
-          if (progMatch) {
-            const localPct = parseInt(progMatch[1], 10)
-            const overallElapsed = seg.startSec + (localPct / 100) * seg.durationSec
-            const transcriptionPct = Math.min(
-              Math.round((overallElapsed / totalDuration) * 100),
-              99
-            )
-            onProgress({
-              phase: 'transcribing',
-              percent: transcriptionPct,
-              segmentIndex: seg.index,
-              segmentCount: segments.length
-            })
+          const onAbort = (): void => {
+            whisperProc.kill('SIGTERM')
           }
-        })
 
-        const seenTimestamps = new Set<string>()
-        whisperProc.stdout?.on('data', (chunk: Buffer) => {
-          const text = chunk.toString()
+          signal.addEventListener('abort', onAbort, { once: true })
 
-          for (const line of text.split('\n')) {
-            const segMatch = line.match(/\[([\d:.,]+)\s*-->\s*[\d:.,]+\]\s+(.+)/)
-            if (!segMatch) continue
+          let whisperErr = ''
+          whisperProc.stderr?.on('data', (chunk: Buffer) => {
+            const text = chunk.toString()
+            whisperErr += text
 
-            const localTimestamp = segMatch[1]
-            if (seenTimestamps.has(localTimestamp)) continue
-            seenTimestamps.add(localTimestamp)
+            const progMatch = text.match(/progress\s*=\s*(\d+)%/)
+            if (progMatch) {
+              const localPct = parseInt(progMatch[1], 10)
+              const overallElapsed = startSec + (localPct / 100) * durationSec
+              const transcriptionPct = Math.min(
+                Math.round((overallElapsed / totalDuration) * 100),
+                99
+              )
+              onProgress({
+                phase: 'transcribing',
+                percent: transcriptionPct,
+                segmentIndex: progressSegment.index,
+                segmentCount: segments.length
+              })
+            }
+          })
 
-            const localElapsed = hhmmssToSeconds(localTimestamp.replace(',', '.'))
-            const overallElapsed = seg.startSec + localElapsed
-            const transcriptionPct = Math.min(
-              Math.round((overallElapsed / totalDuration) * 100),
-              99
-            )
+          const seenTimestamps = new Set<string>()
+          whisperProc.stdout?.on('data', (chunk: Buffer) => {
+            const text = chunk.toString()
 
-            onProgress({
-              phase: 'transcribing',
-              percent: transcriptionPct,
-              segmentIndex: seg.index,
-              segmentCount: segments.length,
-              liveText: segMatch[2].trim()
-            })
-          }
-        })
+            for (const line of text.split('\n')) {
+              const segMatch = line.match(/\[([\d:.,]+)\s*-->\s*[\d:.,]+\]\s+(.+)/)
+              if (!segMatch) continue
 
-        whisperProc.on('close', (code) => {
-          signal.removeEventListener('abort', onAbort)
-          activeProcess = null
+              const localTimestamp = segMatch[1]
+              if (seenTimestamps.has(localTimestamp)) continue
+              seenTimestamps.add(localTimestamp)
 
-          if (signal.aborted) {
+              const localElapsed = hhmmssToSeconds(localTimestamp.replace(',', '.'))
+              const overallElapsed = startSec + localElapsed
+              const transcriptionPct = Math.min(
+                Math.round((overallElapsed / totalDuration) * 100),
+                99
+              )
+
+              onProgress({
+                phase: 'transcribing',
+                percent: transcriptionPct,
+                segmentIndex: progressSegment.index,
+                segmentCount: segments.length,
+                liveText: segMatch[2].trim()
+              })
+            }
+          })
+
+          whisperProc.on('close', (code) => {
+            signal.removeEventListener('abort', onAbort)
+            activeProcess = null
+
+            if (signal.aborted) {
+              resolve()
+              return
+            }
+
+            if (code !== 0) {
+              reject(
+                new WhisperSegmentProcessError(
+                  `Whisper failed on segment ${progressSegment.index + 1} (code ${code})\n${whisperErr.slice(-800)}`,
+                  code,
+                  whisperErr
+                )
+              )
+              return
+            }
+
+            if (/^error:/im.test(whisperErr)) {
+              reject(
+                new Error(
+                  `Whisper reported an error on segment ${progressSegment.index + 1}\n${whisperErr.slice(-800)}`
+                )
+              )
+              return
+            }
+
             resolve()
-            return
-          }
+          })
 
-          if (code !== 0) {
-            reject(
-              new Error(
-                `Whisper failed on segment ${seg.index + 1} (code ${code})\n${whisperErr.slice(-800)}`
-              )
-            )
-            return
-          }
+          whisperProc.on('error', (error) => {
+            signal.removeEventListener('abort', onAbort)
+            activeProcess = null
+            reject(error)
+          })
+        })
+      }
 
-          if (/^error:/im.test(whisperErr)) {
-            reject(
-              new Error(
-                `Whisper reported an error on segment ${seg.index + 1}\n${whisperErr.slice(-800)}`
-              )
-            )
-            return
-          }
+      try {
+        await runWhisperWindow(gpuEnabled)
+      } catch (error) {
+        const shouldFallbackToCpu =
+          gpuEnabled &&
+          error instanceof WhisperSegmentProcessError &&
+          isMissingWindowsDependencyExitCode(error.exitCode)
 
-          resolve()
+        if (!shouldFallbackToCpu) {
+          throw error
+        }
+
+        onProgress({ phase: 'downloading-binary', percent: 0 })
+        await downloadBinary(reportBinaryDownloadProgress, signal, {
+          forceCpu: true,
+          replaceExisting: true
         })
 
-        whisperProc.on('error', reject)
-      })
+        if (signal.aborted) {
+          throw new Error('Cancelled')
+        }
 
-      const segSrtPath = `${segSrtBase}.srt`
-      if (existsSync(segSrtPath)) {
-        const rawSrt = readFileSync(segSrtPath, 'utf-8')
-        if (rawSrt.trim()) {
-          srtContents.push(offsetSrtContent(rawSrt, seg.startSec))
+        const cpuWhisperExe = getWhisperExe()
+        if (!cpuWhisperExe) {
+          throw new Error(
+            'Whisper could not start with the GPU binary, and the CPU fallback binary could not be installed.'
+          )
+        }
+
+        gpuEnabled = false
+        whisperExe = cpuWhisperExe
+
+        await unlink(`${srtBasePath}.srt`).catch(() => {})
+        await runWhisperWindow(false)
+      }
+
+      const srtWindowPath = `${srtBasePath}.srt`
+      const rawSrt = existsSync(srtWindowPath) ? readFileSync(srtWindowPath, 'utf-8') : ''
+
+      await unlink(wavPath).catch(() => {})
+
+      return rawSrt
+    }
+
+    const transcribeRetryWindows = async (
+      progressSegment: AudioSegment,
+      windows: AudioSegment[],
+      filePrefix: string
+    ): Promise<SubtitleCue[]> => {
+      const collectedCues: SubtitleCue[] = []
+
+      for (const window of windows) {
+        if (signal.aborted) throw new Error('Cancelled')
+
+        const rawWindowSrt = await transcribeWindow(
+          `${filePrefix}_${window.index.toString().padStart(3, '0')}`,
+          progressSegment.startSec + window.startSec,
+          window.durationSec,
+          progressSegment,
+          false
+        )
+        const localWindowCues = offsetSubtitleCues(parseSrtContent(rawWindowSrt), window.startSec)
+        collectedCues.push(...localWindowCues)
+      }
+
+      return dedupeSubtitleCues(collectedCues)
+    }
+
+    const srtContents: string[] = []
+
+    for (const seg of segments) {
+      if (signal.aborted) throw new Error('Cancelled')
+
+      const segPad = seg.index.toString().padStart(3, '0')
+      const segmentBaseName = `segment_${segPad}`
+      const baseRawSrt = await transcribeWindow(segmentBaseName, seg.startSec, seg.durationSec, seg, true)
+
+      let bestLocalCues = parseSrtContent(baseRawSrt)
+      let repairedLocalCues = bestLocalCues
+
+      for (
+        let repairCount = 0;
+        repairCount < MAX_GAP_REPAIRS_PER_SEGMENT && repairedLocalCues.length > 0;
+        repairCount++
+      ) {
+        const gapToRepair = findLargeInternalGaps(repairedLocalCues, LARGE_GAP_THRESHOLD_S)
+          .sort((left, right) => right.durationSec - left.durationSec)[0]
+
+        if (!gapToRepair) {
+          break
+        }
+
+        const repairStartSec = Math.max(0, gapToRepair.startSec - GAP_REPAIR_CONTEXT_S)
+        const repairEndSec = Math.min(seg.durationSec, gapToRepair.endSec + GAP_REPAIR_CONTEXT_S)
+        const repairRawSrt = await transcribeWindow(
+          `${segmentBaseName}_repair_${repairCount.toString().padStart(2, '0')}`,
+          seg.startSec + repairStartSec,
+          repairEndSec - repairStartSec,
+          seg,
+          false
+        )
+        const repairCues = offsetSubtitleCues(parseSrtContent(repairRawSrt), repairStartSec)
+        if (repairCues.length === 0) {
+          continue
+        }
+
+        repairedLocalCues = replaceCueRange(repairedLocalCues, repairStartSec, repairEndSec, repairCues)
+      }
+
+      if (shouldPreferCandidate(bestLocalCues, repairedLocalCues)) {
+        bestLocalCues = repairedLocalCues
+      }
+
+      if (
+        bestLocalCues.length === 0 ||
+        findLargeInternalGaps(bestLocalCues, LARGE_GAP_THRESHOLD_S).length > 0
+      ) {
+        const retryWindows = buildOverlappingSegments(
+          seg.durationSec,
+          WINDOW_RETRY_DURATION_S,
+          WINDOW_RETRY_OVERLAP_S
+        )
+        const windowedCues = await transcribeRetryWindows(seg, retryWindows, `${segmentBaseName}_window`)
+
+        if (shouldPreferCandidate(bestLocalCues, windowedCues)) {
+          bestLocalCues = windowedCues
         }
       }
 
-      await unlink(segWavPath).catch(() => {})
+      if (bestLocalCues.length === 0 && seg.durationSec >= 120) {
+        throw new Error(
+          `Whisper produced no subtitles for segment ${seg.index + 1} near ${secondsToTimestamp(seg.startSec)}.`
+        )
+      }
+
+      const finalLocalSrt = serializeSrtCues(bestLocalCues)
+      if (finalLocalSrt.trim()) {
+        srtContents.push(offsetSrtContent(finalLocalSrt, seg.startSec))
+      }
     }
 
     if (srtContents.length === 0) {

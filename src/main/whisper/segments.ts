@@ -1,11 +1,11 @@
-const MIN_SEGMENT_S = 60    // merge segments shorter than this into a neighbor
-const MAX_SEGMENT_S = 1200  // hard-split segments longer than this (20 min cap)
-const PAD_S = 0.35          // expand each boundary by this many seconds
+const MIN_SEGMENT_S = 60
+const MAX_SEGMENT_S = 1200
+const PAD_S = 0.35
 
 export interface AudioSegment {
   index: number
-  startSec: number   // padded and clamped to [0, totalDuration]
-  endSec: number     // padded and clamped to [0, totalDuration]
+  startSec: number
+  endSec: number
   durationSec: number
 }
 
@@ -13,6 +13,12 @@ export interface SubtitleCue {
   startSec: number
   endSec: number
   text: string
+}
+
+export interface SubtitleGap {
+  startSec: number
+  endSec: number
+  durationSec: number
 }
 
 /**
@@ -29,7 +35,6 @@ export function parseSilences(stderr: string): [number, number][] {
   while ((m = startRe.exec(stderr)) !== null) starts.push(parseFloat(m[1]))
   while ((m = endRe.exec(stderr)) !== null) ends.push(parseFloat(m[1]))
 
-  // Pair up starts and ends (audio ending mid-silence produces an unpaired start)
   const len = Math.min(starts.length, ends.length)
   const silences: [number, number][] = []
   for (let i = 0; i < len; i++) {
@@ -39,70 +44,164 @@ export function parseSilences(stderr: string): [number, number][] {
 }
 
 /**
- * Convert silence intervals into speech segments, apply MIN/MAX rules, and add padding.
+ * Build continuous chunks across the full timeline.
+ * Silences are used as preferred split points near the end of each chunk,
+ * not as regions to omit from transcription.
  */
 export function buildSegments(
   silences: [number, number][],
   totalDuration: number
 ): AudioSegment[] {
-  // Step 1: Invert silence intervals to get raw speech blocks
-  const rawSpeech: [number, number][] = []
-  let cursor = 0
-  for (const [silStart, silEnd] of silences) {
-    if (silStart > cursor) rawSpeech.push([cursor, silStart])
-    cursor = silEnd
-  }
-  if (cursor < totalDuration) rawSpeech.push([cursor, totalDuration])
-  if (rawSpeech.length === 0) rawSpeech.push([0, totalDuration]) // no silences at all
+  const normalizedSilences = silences
+    .map(([start, end]) => [Math.max(0, start), Math.min(totalDuration, end)] as [number, number])
+    .filter(([start, end]) => end > start)
+    .sort((left, right) => left[0] - right[0])
 
-  // Step 2: Greedily combine speech blocks into chunks ≤ MAX_SEGMENT_S
-  // (silence gaps between speech blocks are included in the span)
+  const mergedSilences: [number, number][] = []
+  for (const silence of normalizedSilences) {
+    const last = mergedSilences[mergedSilences.length - 1]
+    if (!last || silence[0] > last[1]) {
+      mergedSilences.push([...silence])
+      continue
+    }
+
+    last[1] = Math.max(last[1], silence[1])
+  }
+
   const chunks: [number, number][] = []
-  let [chunkStart, chunkEnd] = rawSpeech[0]
-  for (let i = 1; i < rawSpeech.length; i++) {
-    const segEnd = rawSpeech[i][1]
-    if (segEnd - chunkStart <= MAX_SEGMENT_S) {
-      chunkEnd = segEnd
-    } else {
-      chunks.push([chunkStart, chunkEnd])
-      chunkStart = rawSpeech[i][0]
-      chunkEnd = segEnd
-    }
-  }
-  chunks.push([chunkStart, chunkEnd])
+  let chunkStart = 0
 
-  // Step 3: Hard-split any single chunk that still exceeds MAX (e.g. no silences for 30 min)
-  const splitChunks: [number, number][] = []
-  for (const [s, e] of chunks) {
-    if (e - s > MAX_SEGMENT_S) {
-      let pos = s
-      while (pos < e) {
-        const end = Math.min(pos + MAX_SEGMENT_S, e)
-        splitChunks.push([pos, end])
-        pos = end
+  while (chunkStart < totalDuration) {
+    const remaining = totalDuration - chunkStart
+    if (remaining <= MAX_SEGMENT_S) {
+      chunks.push([chunkStart, totalDuration])
+      break
+    }
+
+    const minSplit = Math.min(totalDuration, chunkStart + MIN_SEGMENT_S)
+    const maxSplit = Math.min(totalDuration, chunkStart + MAX_SEGMENT_S)
+    let splitPoint: number | null = null
+
+    for (const [silenceStart, silenceEnd] of mergedSilences) {
+      if (silenceEnd <= minSplit) {
+        continue
       }
-    } else {
-      splitChunks.push([s, e])
+      if (silenceStart >= maxSplit) {
+        break
+      }
+
+      splitPoint = Math.max(minSplit, Math.min(maxSplit, (silenceStart + silenceEnd) / 2))
+    }
+
+    const chunkEnd = splitPoint ?? maxSplit
+    if (chunkEnd <= chunkStart) {
+      break
+    }
+
+    chunks.push([chunkStart, chunkEnd])
+    chunkStart = chunkEnd
+  }
+
+  if (chunks.length > 1) {
+    const lastChunk = chunks[chunks.length - 1]
+    const lastDuration = lastChunk[1] - lastChunk[0]
+    if (lastDuration < MIN_SEGMENT_S) {
+      chunks[chunks.length - 2] = [chunks[chunks.length - 2][0], lastChunk[1]]
+      chunks.pop()
     }
   }
 
-  // Step 4: Absorb trailing tiny segments (< MIN) into the previous chunk
-  const merged: [number, number][] = []
-  for (const chunk of splitChunks) {
-    const dur = chunk[1] - chunk[0]
-    if (dur < MIN_SEGMENT_S && merged.length > 0) {
-      merged[merged.length - 1] = [merged[merged.length - 1][0], chunk[1]]
-    } else {
-      merged.push([chunk[0], chunk[1]])
-    }
-  }
-
-  // Step 5: Apply padding and build AudioSegment objects
-  return merged.map(([s, e], index) => {
+  return chunks.map(([s, e], index) => {
     const startSec = Math.max(0, s - PAD_S)
     const endSec = Math.min(totalDuration, e + PAD_S)
     return { index, startSec, endSec, durationSec: endSec - startSec }
   })
+}
+
+/**
+ * Build continuous chunks using embedded chapter endings as preferred split points.
+ * This keeps full timeline coverage while avoiding silence detection for chapterized books.
+ */
+export function buildSegmentsFromChapters(
+  chapters: Array<{ startSec: number; endSec: number }>,
+  totalDuration: number
+): AudioSegment[] {
+  const preferredBoundaries = chapters
+    .map((chapter) => Math.min(totalDuration, Math.max(0, chapter.endSec)))
+    .filter((boundary) => boundary > 0 && boundary < totalDuration)
+    .sort((left, right) => left - right)
+    .filter((boundary, index, boundaries) => index === 0 || boundary > boundaries[index - 1])
+
+  const chunks: [number, number][] = []
+  let chunkStart = 0
+
+  while (chunkStart < totalDuration) {
+    const remaining = totalDuration - chunkStart
+    if (remaining <= MAX_SEGMENT_S) {
+      chunks.push([chunkStart, totalDuration])
+      break
+    }
+
+    const minSplit = Math.min(totalDuration, chunkStart + MIN_SEGMENT_S)
+    const maxSplit = Math.min(totalDuration, chunkStart + MAX_SEGMENT_S)
+    const splitPoint =
+      [...preferredBoundaries].reverse().find((boundary) => boundary >= minSplit && boundary <= maxSplit) ??
+      maxSplit
+
+    if (splitPoint <= chunkStart) {
+      break
+    }
+
+    chunks.push([chunkStart, splitPoint])
+    chunkStart = splitPoint
+  }
+
+  if (chunks.length > 1) {
+    const lastChunk = chunks[chunks.length - 1]
+    const lastDuration = lastChunk[1] - lastChunk[0]
+    if (lastDuration < MIN_SEGMENT_S) {
+      chunks[chunks.length - 2] = [chunks[chunks.length - 2][0], lastChunk[1]]
+      chunks.pop()
+    }
+  }
+
+  return chunks.map(([s, e], index) => {
+    const startSec = Math.max(0, s - PAD_S)
+    const endSec = Math.min(totalDuration, e + PAD_S)
+    return { index, startSec, endSec, durationSec: endSec - startSec }
+  })
+}
+
+export function buildOverlappingSegments(
+  totalDuration: number,
+  windowDuration: number,
+  overlapDuration: number
+): AudioSegment[] {
+  if (totalDuration <= 0) return []
+
+  const safeWindowDuration = Math.max(1, windowDuration)
+  const safeOverlapDuration = Math.max(0, Math.min(overlapDuration, safeWindowDuration / 2))
+  const step = Math.max(1, safeWindowDuration - safeOverlapDuration)
+  const windows: AudioSegment[] = []
+
+  let startSec = 0
+  while (startSec < totalDuration) {
+    const endSec = Math.min(totalDuration, startSec + safeWindowDuration)
+    windows.push({
+      index: windows.length,
+      startSec,
+      endSec,
+      durationSec: endSec - startSec
+    })
+
+    if (endSec >= totalDuration) {
+      break
+    }
+
+    startSec += step
+  }
+
+  return windows
 }
 
 /**
@@ -132,8 +231,13 @@ function fromSec(totalSec: number): string {
   return `${p2(hr)}:${p2(min)}:${p2(sec)},${p3(ms)}`
 }
 
-function p2(n: number): string { return String(n).padStart(2, '0') }
-function p3(n: number): string { return String(n).padStart(3, '0') }
+function p2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+function p3(n: number): string {
+  return String(n).padStart(3, '0')
+}
 
 /**
  * Merge multiple SRT content strings into one, renumbering blocks sequentially.
@@ -148,7 +252,6 @@ export function mergeSrts(srtContents: string[]): string {
     for (const block of blocks) {
       const lines = block.trim().split('\n')
       if (lines.length < 2) continue
-      // Replace the first line (subtitle index) with the new sequential number
       outputBlocks.push([String(counter++), ...lines.slice(1)].join('\n'))
     }
   }
@@ -188,6 +291,57 @@ export function parseSrtContent(srtContent: string): SubtitleCue[] {
   }
 
   return cues
+}
+
+export function findLargeInternalGaps(cues: SubtitleCue[], thresholdSec: number): SubtitleGap[] {
+  if (cues.length < 2) return []
+
+  const sortedCues = [...cues].sort(
+    (left, right) => left.startSec - right.startSec || left.endSec - right.endSec
+  )
+  const gaps: SubtitleGap[] = []
+
+  for (let index = 0; index < sortedCues.length - 1; index++) {
+    const startSec = sortedCues[index].endSec
+    const endSec = sortedCues[index + 1].startSec
+    const durationSec = endSec - startSec
+
+    if (durationSec >= thresholdSec) {
+      gaps.push({ startSec, endSec, durationSec })
+    }
+  }
+
+  return gaps
+}
+
+export function dedupeSubtitleCues(cues: SubtitleCue[]): SubtitleCue[] {
+  const sortedCues = [...cues].sort(
+    (left, right) =>
+      left.startSec - right.startSec || left.endSec - right.endSec || left.text.localeCompare(right.text)
+  )
+  const deduped: SubtitleCue[] = []
+
+  for (const cue of sortedCues) {
+    const previousCue = deduped[deduped.length - 1]
+    if (!previousCue || !areEquivalentCues(previousCue, cue)) {
+      deduped.push(cue)
+      continue
+    }
+
+    deduped[deduped.length - 1] = pickBetterCue(previousCue, cue)
+  }
+
+  return deduped
+}
+
+export function replaceCueRange(
+  cues: SubtitleCue[],
+  startSec: number,
+  endSec: number,
+  replacementCues: SubtitleCue[]
+): SubtitleCue[] {
+  const preservedCues = cues.filter((cue) => cue.endSec <= startSec || cue.startSec >= endSec)
+  return dedupeSubtitleCues([...preservedCues, ...replacementCues])
 }
 
 export function serializeSrtCues(cues: SubtitleCue[]): string {
@@ -254,4 +408,38 @@ function parseTimestamp(timestamp: string): number {
   const match = timestamp.match(/^(\d{2}):(\d{2}):(\d{2}),(\d{3})$/)
   if (!match) return 0
   return toSec(match[1], match[2], match[3], match[4])
+}
+
+function areEquivalentCues(left: SubtitleCue, right: SubtitleCue): boolean {
+  const normalizedLeft = normalizeCueText(left.text)
+  const normalizedRight = normalizeCueText(right.text)
+
+  if (!normalizedLeft || !normalizedRight) {
+    return false
+  }
+
+  const sameTiming =
+    Math.abs(left.startSec - right.startSec) <= 1.5 && Math.abs(left.endSec - right.endSec) <= 1.5
+  const sameText =
+    normalizedLeft === normalizedRight ||
+    normalizedLeft.includes(normalizedRight) ||
+    normalizedRight.includes(normalizedLeft)
+
+  return sameTiming && sameText
+}
+
+function normalizeCueText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
+function pickBetterCue(left: SubtitleCue, right: SubtitleCue): SubtitleCue {
+  const leftTextLength = normalizeCueText(left.text).length
+  const rightTextLength = normalizeCueText(right.text).length
+  if (rightTextLength !== leftTextLength) {
+    return rightTextLength > leftTextLength ? right : left
+  }
+
+  const leftDuration = left.endSec - left.startSec
+  const rightDuration = right.endSec - right.startSec
+  return rightDuration > leftDuration ? right : left
 }
