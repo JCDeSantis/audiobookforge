@@ -34,6 +34,19 @@ export interface WhisperModelInfo {
   description: string
 }
 
+export interface WhisperStorageInfo {
+  binaryReady: boolean
+  binaryVersion: string
+  gpuEnabled: boolean
+  gpuDetected: boolean
+  models: Array<{
+    id: WhisperModel
+    name: string
+    size: string
+    downloaded: boolean
+  }>
+}
+
 export type WhisperProgressPhase =
   | 'downloading-binary'
   | 'downloading-model'
@@ -144,6 +157,7 @@ export const IPC = {
   WHISPER_PROGRESS: 'whisper:progress',
   WHISPER_CANCEL: 'whisper:cancel',
   WHISPER_STORAGE_INFO: 'whisper:storage-info',
+  WHISPER_CLEAR_MODELS: 'whisper:clear-models',
 
   // Files
   FILES_PICK_AUDIO: 'files:pick-audio',

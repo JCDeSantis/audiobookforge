@@ -6,7 +6,7 @@ import {
   detectNvidiaGpu,
   WHISPER_VERSION
 } from '../whisper/binary'
-import { isModelDownloaded, WHISPER_MODELS } from '../whisper/models'
+import { deleteModel, isModelDownloaded, WHISPER_MODELS } from '../whisper/models'
 import { requestCancel } from './queue.ipc'
 import { IPC } from '../../shared/types'
 
@@ -30,5 +30,9 @@ export function registerWhisperIpc(): void {
         downloaded: isModelDownloaded(m.id)
       }))
     }
+  })
+
+  ipcMain.handle(IPC.WHISPER_CLEAR_MODELS, async () => {
+    await Promise.all(WHISPER_MODELS.map((model) => deleteModel(model.id)))
   })
 }

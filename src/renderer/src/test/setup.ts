@@ -43,6 +43,7 @@ const defaultElectronMock = {
       gpuDetected: false,
       models: []
     }),
+    clearModels: async () => undefined,
     onProgress: () => () => undefined
   }
 }

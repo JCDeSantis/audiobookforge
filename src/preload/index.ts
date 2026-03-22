@@ -40,6 +40,7 @@ const electron = {
   whisper: {
     cancel: () => ipcRenderer.invoke(IPC.WHISPER_CANCEL),
     getStorageInfo: () => ipcRenderer.invoke(IPC.WHISPER_STORAGE_INFO),
+    clearModels: () => ipcRenderer.invoke(IPC.WHISPER_CLEAR_MODELS),
     onProgress: (callback: (event: unknown) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => callback(data)
       ipcRenderer.on(IPC.WHISPER_PROGRESS, handler)

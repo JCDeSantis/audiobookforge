@@ -44,8 +44,8 @@ export const WHISPER_MODELS: WhisperModelInfo[] = [
   {
     id: 'large-v3-turbo',
     name: 'Large V3 Turbo (Full)',
-    size: '1.6 GB',
-    sizeBytes: 1739146240,
+    size: '1.51 GB',
+    sizeBytes: 1624555275,
     description: 'Maximum quality - full-precision Large V3 Turbo'
   }
 ]

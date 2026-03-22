@@ -5,7 +5,13 @@ import { unlink } from 'fs/promises'
 import { cpus } from 'os'
 import axios from 'axios'
 import { app } from 'electron'
-import { getWhisperExe, isBinaryDownloaded, downloadBinary, isGpuEnabled } from './binary'
+import {
+  getWhisperExe,
+  isBinaryDownloaded,
+  downloadBinary,
+  isGpuEnabled,
+  isCudaBinaryDownloaded
+} from './binary'
 import { getModelPath, getModelUrl, isModelDownloaded, getModelDir, WHISPER_MODELS } from './models'
 import { getFfmpegPath, probeFile, sumDurations } from '../ffmpeg/probe'
 import { createTempDir, createConcatListFile, cleanupTempDir } from '../ffmpeg/concat'
@@ -211,6 +217,7 @@ export async function transcribeAudio(
     if (signal.aborted) throw new Error('Cancelled')
 
     let gpuEnabled = isGpuEnabled()
+    let binaryLooksCudaLinked = isCudaBinaryDownloaded()
     const inputDuration = await sumDurations(audioPaths)
 
     if (inputDuration <= 0) {
@@ -238,6 +245,22 @@ export async function transcribeAudio(
     let whisperExe = getWhisperExe()!
     const modelPath = getModelPath(model)
     const threads = getThreadCount()
+
+    if (binaryLooksCudaLinked && !gpuEnabled) {
+      onProgress({ phase: 'downloading-binary', percent: 0 })
+      await downloadBinary(reportBinaryDownloadProgress, signal, {
+        forceCpu: true,
+        replaceExisting: true
+      })
+
+      if (signal.aborted) {
+        throw new Error('Cancelled')
+      }
+
+      whisperExe = getWhisperExe()!
+      gpuEnabled = false
+      binaryLooksCudaLinked = false
+    }
 
     onProgress({ phase: 'preparing', percent: 0 })
 
@@ -523,7 +546,6 @@ export async function transcribeAudio(
         await runWhisperWindow(gpuEnabled)
       } catch (error) {
         const shouldFallbackToCpu =
-          gpuEnabled &&
           error instanceof WhisperSegmentProcessError &&
           isMissingWindowsDependencyExitCode(error.exitCode)
 
@@ -549,6 +571,7 @@ export async function transcribeAudio(
         }
 
         gpuEnabled = false
+        binaryLooksCudaLinked = false
         whisperExe = cpuWhisperExe
 
         await unlink(`${srtBasePath}.srt`).catch(() => {})

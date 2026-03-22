@@ -1,5 +1,5 @@
-import React, { useState } from 'react'
-import type { WhisperModel } from '../../../shared/types'
+import React, { useEffect, useState } from 'react'
+import type { WhisperModel, WhisperStorageInfo } from '../../../shared/types'
 import { validateAbsUrl } from '../../../shared/urlSafety'
 import { WHISPER_MODELS } from '../lib/whisperModels'
 import { useAppStore } from '../store/useAppStore'
@@ -17,10 +17,75 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
   const [testResult, setTestResult] = useState<'idle' | 'ok' | 'fail'>('idle')
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [storageInfo, setStorageInfo] = useState<WhisperStorageInfo | null>(null)
+  const [storageError, setStorageError] = useState<string | null>(null)
+  const [clearingModels, setClearingModels] = useState(false)
+  const [clearResult, setClearResult] = useState<string | null>(null)
+
+  useEffect(() => {
+    let isActive = true
+
+    const loadStorageInfo = async (): Promise<void> => {
+      try {
+        const info = await window.electron.whisper.getStorageInfo()
+        if (!isActive) {
+          return
+        }
+        setStorageInfo(info)
+        setStorageError(null)
+      } catch (error) {
+        if (!isActive) {
+          return
+        }
+        setStorageError(
+          error instanceof Error ? error.message : 'Failed to load Whisper storage details.'
+        )
+      }
+    }
+
+    void loadStorageInfo()
+
+    return () => {
+      isActive = false
+    }
+  }, [])
+
+  const installedModelCount =
+    storageInfo?.models.filter((model) => model.downloaded).length ?? 0
 
   const validateCurrentUrl = (): string | null => {
     const validation = validateAbsUrl(url)
     return validation.ok ? null : validation.error
+  }
+
+  const handleClearModels = async (): Promise<void> => {
+    if (installedModelCount === 0 || clearingModels) {
+      return
+    }
+
+    const confirmed = window.confirm(
+      'Remove all downloaded Whisper model files from this computer? They will be downloaded again when needed.'
+    )
+    if (!confirmed) {
+      return
+    }
+
+    setClearingModels(true)
+    setStorageError(null)
+    setClearResult(null)
+
+    try {
+      await window.electron.whisper.clearModels()
+      const updatedInfo = await window.electron.whisper.getStorageInfo()
+      setStorageInfo(updatedInfo)
+      setClearResult('Downloaded Whisper models cleared.')
+    } catch (error) {
+      setStorageError(
+        error instanceof Error ? error.message : 'Failed to clear installed Whisper models.'
+      )
+    } finally {
+      setClearingModels(false)
+    }
   }
 
   const handleTest = async (): Promise<void> => {
@@ -79,7 +144,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
       <div
         aria-labelledby="app-settings-title"
         aria-modal="true"
-        className="w-full max-w-2xl rounded-[30px] border border-[#442020] bg-[linear-gradient(180deg,#150808_0%,#0d0404_100%)] shadow-[0_30px_90px_rgba(0,0,0,0.55)]"
+        className="flex max-h-[calc(100vh-3rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[30px] border border-[#442020] bg-[linear-gradient(180deg,#150808_0%,#0d0404_100%)] shadow-[0_30px_90px_rgba(0,0,0,0.55)]"
         role="dialog"
       >
         <div className="flex items-start justify-between gap-4 border-b border-[#351616] px-6 py-5">
@@ -105,7 +170,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
           </button>
         </div>
 
-        <div className="grid gap-5 px-6 py-6">
+        <div className="grid flex-1 gap-5 overflow-y-auto px-6 py-6">
           <label className="grid gap-2">
             <span className="text-sm font-medium text-[#f6e2e2]">ABS Server URL</span>
             <input
@@ -155,6 +220,42 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
               ))}
             </select>
           </label>
+
+          <div className="rounded-[22px] border border-[#341616] bg-[#120707] px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="max-w-lg">
+                <div className="text-sm font-medium text-[#f6e2e2]">Whisper Storage</div>
+                <div className="mt-1 text-sm leading-6 text-[#d9b7b7]">
+                  {storageInfo ? (
+                    <>
+                      {installedModelCount === 0
+                        ? 'No Whisper models are currently installed.'
+                        : `${installedModelCount} Whisper model${installedModelCount === 1 ? '' : 's'} installed.`}
+                    </>
+                  ) : (
+                    'Checking installed Whisper models...'
+                  )}
+                </div>
+                <div className="mt-1 text-xs leading-5 text-[#a87f7f]">
+                  Clears model files only. The Whisper binary stays installed.
+                </div>
+              </div>
+
+              <button
+                className="rounded-full border border-[#5b2626] px-4 py-2 text-sm font-medium text-[#f0cbcb] transition-colors hover:border-[#dc2626] hover:text-[#fff4f4] disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={clearingModels || installedModelCount === 0}
+                onClick={handleClearModels}
+                type="button"
+              >
+                {clearingModels ? 'Clearing...' : 'Clear Installed Models'}
+              </button>
+            </div>
+
+            {clearResult && <div className="mt-3 text-sm text-[#9fe0bb]">{clearResult}</div>}
+            {storageError && (
+              <div className="mt-3 text-sm leading-6 text-[#ff9f9f]">{storageError}</div>
+            )}
+          </div>
 
           <div className="rounded-[22px] border border-[#341616] bg-[#120707] px-4 py-4">
             <div className="flex flex-wrap items-center gap-3">

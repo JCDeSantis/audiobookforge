@@ -26,4 +26,10 @@ describe('whisper model validation', () => {
 
     expect(isWhisperModelSizeAcceptable(expectedBytes, expectedBytes)).toBe(true)
   })
+
+  it('accepts the current full large v3 turbo model size', () => {
+    const expectedBytes = 1624555275
+
+    expect(isWhisperModelSizeAcceptable(expectedBytes, expectedBytes)).toBe(true)
+  })
 })

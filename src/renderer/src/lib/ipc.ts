@@ -1,4 +1,11 @@
-import type { TranscriptionJob, AbsLibrary, AbsBook, AppSettings, WhisperProgressEvent } from '../../../shared/types'
+import type {
+  TranscriptionJob,
+  AbsLibrary,
+  AbsBook,
+  AppSettings,
+  WhisperProgressEvent,
+  WhisperStorageInfo
+} from '../../../shared/types'
 
 export interface ElectronAPI {
   settings: {
@@ -30,13 +37,8 @@ export interface ElectronAPI {
   }
   whisper: {
     cancel: () => Promise<void>
-    getStorageInfo: () => Promise<{
-      binaryReady: boolean
-      binaryVersion: string
-      gpuEnabled: boolean
-      gpuDetected: boolean
-      models: Array<{ id: string; name: string; size: string; downloaded: boolean }>
-    }>
+    getStorageInfo: () => Promise<WhisperStorageInfo>
+    clearModels: () => Promise<void>
     onProgress: (callback: (event: WhisperProgressEvent) => void) => () => void
   }
 }

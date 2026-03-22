@@ -89,4 +89,48 @@ describe('App settings flow', () => {
 
     expect(screen.queryByRole('dialog', { name: 'Settings' })).not.toBeInTheDocument()
   })
+
+  it('clears installed whisper models from settings', async () => {
+    const getStorageInfoMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        binaryReady: true,
+        binaryVersion: 'v1.8.3',
+        gpuEnabled: false,
+        gpuDetected: false,
+        models: [
+          { id: 'tiny', name: 'Tiny', size: '78 MB', downloaded: true },
+          { id: 'large-v3-turbo', name: 'Large V3 Turbo (Full)', size: '1.51 GB', downloaded: true }
+        ]
+      })
+      .mockResolvedValueOnce({
+        binaryReady: true,
+        binaryVersion: 'v1.8.3',
+        gpuEnabled: false,
+        gpuDetected: false,
+        models: []
+      })
+    const clearModelsMock = vi.fn().mockResolvedValue(undefined)
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    window.electron.whisper.getStorageInfo = getStorageInfoMock
+    window.electron.whisper.clearModels = clearModelsMock
+
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Settings' })
+    await screen.findByText('2 Whisper models installed.')
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Clear Installed Models' }))
+
+    await waitFor(() => {
+      expect(clearModelsMock).toHaveBeenCalledTimes(1)
+      expect(getStorageInfoMock).toHaveBeenCalledTimes(2)
+    })
+
+    expect(within(dialog).getByText('Downloaded Whisper models cleared.')).toBeInTheDocument()
+    confirmSpy.mockRestore()
+  })
 })
