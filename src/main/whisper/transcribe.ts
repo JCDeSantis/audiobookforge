@@ -1,6 +1,14 @@
 import { spawn, ChildProcess } from 'child_process'
 import { join, dirname } from 'path'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, createWriteStream, statSync } from 'fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  createWriteStream,
+  statSync,
+  appendFileSync
+} from 'fs'
 import { unlink } from 'fs/promises'
 import { cpus } from 'os'
 import axios from 'axios'
@@ -28,6 +36,7 @@ import {
   secondsToTimestamp,
   serializeSrtCues
 } from './segments'
+import { shouldPreferCueCandidate } from './candidateSelection'
 import type { WhisperModel, WhisperProgressEvent } from '../../shared/types'
 import type { AudioSegment, SubtitleCue } from './segments'
 import { isMissingWindowsDependencyExitCode } from '../../shared/whisperExitCodes'
@@ -42,6 +51,11 @@ const GAP_REPAIR_CONTEXT_S = 6
 const WINDOW_RETRY_DURATION_S = 240
 const WINDOW_RETRY_OVERLAP_S = 8
 const MAX_GAP_REPAIRS_PER_SEGMENT = 6
+const ENABLE_TEMP_GAP_DEBUG_LOGGING = false
+const GAP_DEBUG_LOG_FILENAME = 'gap-debug.log'
+
+let gapDebugLogPath: string | null = null
+let gapDebugFileWriteDisabled = false
 
 class WhisperSegmentProcessError extends Error {
   exitCode: number | null
@@ -72,32 +86,52 @@ function offsetSubtitleCues(cues: SubtitleCue[], offsetSec: number): SubtitleCue
   }))
 }
 
-function getCueCoverageSeconds(cues: SubtitleCue[]): number {
-  return cues.reduce((total, cue) => total + Math.max(0, cue.endSec - cue.startSec), 0)
+function summarizeCueQualityForDebug(cues: SubtitleCue[]): {
+  cueCount: number
+  coverageSec: number
+  gapCount: number
+  largestGapSec: number
+  gapDurationsSec: number[]
+} {
+  const gaps = findLargeInternalGaps(cues, LARGE_GAP_THRESHOLD_S).sort(
+    (left, right) => right.durationSec - left.durationSec
+  )
+  return {
+    cueCount: cues.length,
+    coverageSec: Number(
+      cues.reduce((total, cue) => total + Math.max(0, cue.endSec - cue.startSec), 0).toFixed(2)
+    ),
+    gapCount: gaps.length,
+    largestGapSec: Number((gaps[0]?.durationSec ?? 0).toFixed(2)),
+    gapDurationsSec: gaps.slice(0, 3).map((gap) => Number(gap.durationSec.toFixed(2)))
+  }
 }
 
-function shouldPreferCandidate(currentCues: SubtitleCue[], candidateCues: SubtitleCue[]): boolean {
-  if (candidateCues.length === 0) {
-    return false
-  }
-  if (currentCues.length === 0) {
-    return true
+function logGapDebug(event: string, payload: Record<string, unknown>): void {
+  if (!ENABLE_TEMP_GAP_DEBUG_LOGGING) {
+    return
   }
 
-  const currentGapCount = findLargeInternalGaps(currentCues, LARGE_GAP_THRESHOLD_S).length
-  const candidateGapCount = findLargeInternalGaps(candidateCues, LARGE_GAP_THRESHOLD_S).length
-  const currentCoverage = getCueCoverageSeconds(currentCues)
-  const candidateCoverage = getCueCoverageSeconds(candidateCues)
+  const entry = `${new Date().toISOString()} [gap-debug] ${event} ${JSON.stringify(payload)}`
+  console.info(entry)
 
-  if (candidateGapCount < currentGapCount && candidateCoverage + 20 >= currentCoverage) {
-    return true
+  if (gapDebugFileWriteDisabled) {
+    return
   }
 
-  if (candidateCoverage > currentCoverage + 5) {
-    return true
-  }
+  try {
+    if (!gapDebugLogPath) {
+      const logDir = join(app.getPath('userData'), 'logs')
+      mkdirSync(logDir, { recursive: true })
+      gapDebugLogPath = join(logDir, GAP_DEBUG_LOG_FILENAME)
+    }
 
-  return candidateGapCount === currentGapCount && candidateCoverage > currentCoverage
+    appendFileSync(gapDebugLogPath, `${entry}\n`, 'utf-8')
+  } catch (error) {
+    gapDebugFileWriteDisabled = true
+    const reason = error instanceof Error ? error.message : String(error)
+    console.warn(`[gap-debug] file logging disabled: ${reason}`)
+  }
 }
 
 async function downloadModel(
@@ -195,6 +229,12 @@ export async function transcribeAudio(
   let tempDir: string | null = null
 
   try {
+    logGapDebug('session-start', {
+      model,
+      audioFileCount: audioPaths.length,
+      logPath: gapDebugLogPath ?? join(app.getPath('userData'), 'logs', GAP_DEBUG_LOG_FILENAME)
+    })
+
     const reportBinaryDownloadProgress = (percent: number): void => {
       if (!signal.aborted) {
         onProgress({ phase: 'downloading-binary', percent })
@@ -621,14 +661,38 @@ export async function transcribeAudio(
 
       let bestLocalCues = parseSrtContent(baseRawSrt)
       let repairedLocalCues = bestLocalCues
+      const attemptedRepairRanges = new Set<string>()
+      const segmentLogContext = {
+        segmentIndex: seg.index + 1,
+        segmentCount: segments.length,
+        segmentStartSec: Number(seg.startSec.toFixed(2)),
+        segmentDurationSec: Number(seg.durationSec.toFixed(2)),
+        segmentTimestamp: secondsToTimestamp(seg.startSec)
+      }
+
+      logGapDebug('segment-base', {
+        ...segmentLogContext,
+        base: summarizeCueQualityForDebug(bestLocalCues)
+      })
 
       for (
         let repairCount = 0;
         repairCount < MAX_GAP_REPAIRS_PER_SEGMENT && repairedLocalCues.length > 0;
         repairCount++
       ) {
-        const gapToRepair = findLargeInternalGaps(repairedLocalCues, LARGE_GAP_THRESHOLD_S)
-          .sort((left, right) => right.durationSec - left.durationSec)[0]
+        const toRepairKey = (gapStartSec: number, gapEndSec: number): string => {
+          const repairStartSec = Math.max(0, gapStartSec - GAP_REPAIR_CONTEXT_S)
+          const repairEndSec = Math.min(seg.durationSec, gapEndSec + GAP_REPAIR_CONTEXT_S)
+          return `${Math.floor(repairStartSec * 10)}-${Math.ceil(repairEndSec * 10)}`
+        }
+
+        const gapCandidates = findLargeInternalGaps(repairedLocalCues, LARGE_GAP_THRESHOLD_S).sort(
+          (left, right) => right.durationSec - left.durationSec
+        )
+        const gapToRepair = gapCandidates.find((gap) => {
+          const key = toRepairKey(gap.startSec, gap.endSec)
+          return !attemptedRepairRanges.has(key)
+        })
 
         if (!gapToRepair) {
           break
@@ -636,6 +700,16 @@ export async function transcribeAudio(
 
         const repairStartSec = Math.max(0, gapToRepair.startSec - GAP_REPAIR_CONTEXT_S)
         const repairEndSec = Math.min(seg.durationSec, gapToRepair.endSec + GAP_REPAIR_CONTEXT_S)
+        const repairKey = toRepairKey(gapToRepair.startSec, gapToRepair.endSec)
+        attemptedRepairRanges.add(repairKey)
+        logGapDebug('segment-repair-attempt', {
+          ...segmentLogContext,
+          repairAttempt: repairCount + 1,
+          targetedGapSec: Number(gapToRepair.durationSec.toFixed(2)),
+          repairWindowStartSec: Number(repairStartSec.toFixed(2)),
+          repairWindowEndSec: Number(repairEndSec.toFixed(2)),
+          repairWindowDurationSec: Number((repairEndSec - repairStartSec).toFixed(2))
+        })
         const repairRawSrt = await transcribeWindow(
           `${segmentBaseName}_repair_${repairCount.toString().padStart(2, '0')}`,
           seg.startSec + repairStartSec,
@@ -645,13 +719,58 @@ export async function transcribeAudio(
         )
         const repairCues = offsetSubtitleCues(parseSrtContent(repairRawSrt), repairStartSec)
         if (repairCues.length === 0) {
+          logGapDebug('segment-repair-empty', {
+            ...segmentLogContext,
+            repairAttempt: repairCount + 1,
+            repairWindowStartSec: Number(repairStartSec.toFixed(2)),
+            repairWindowEndSec: Number(repairEndSec.toFixed(2))
+          })
           continue
         }
 
-        repairedLocalCues = replaceCueRange(repairedLocalCues, repairStartSec, repairEndSec, repairCues)
+        const candidateRepairedCues = replaceCueRange(
+          repairedLocalCues,
+          repairStartSec,
+          repairEndSec,
+          repairCues
+        )
+        const shouldKeepRepair = shouldPreferCueCandidate(
+          repairedLocalCues,
+          candidateRepairedCues,
+          LARGE_GAP_THRESHOLD_S
+        )
+        if (!shouldKeepRepair) {
+          logGapDebug('segment-repair-rejected', {
+            ...segmentLogContext,
+            repairAttempt: repairCount + 1,
+            reason: 'no-quality-improvement',
+            current: summarizeCueQualityForDebug(repairedLocalCues),
+            candidate: summarizeCueQualityForDebug(candidateRepairedCues)
+          })
+          continue
+        }
+
+        repairedLocalCues = candidateRepairedCues
+        attemptedRepairRanges.clear()
+        logGapDebug('segment-repair-updated', {
+          ...segmentLogContext,
+          repairAttempt: repairCount + 1,
+          repaired: summarizeCueQualityForDebug(repairedLocalCues)
+        })
       }
 
-      if (shouldPreferCandidate(bestLocalCues, repairedLocalCues)) {
+      const shouldUseRepaired = shouldPreferCueCandidate(
+        bestLocalCues,
+        repairedLocalCues,
+        LARGE_GAP_THRESHOLD_S
+      )
+      logGapDebug('segment-repair-decision', {
+        ...segmentLogContext,
+        preferRepaired: shouldUseRepaired,
+        current: summarizeCueQualityForDebug(bestLocalCues),
+        repaired: summarizeCueQualityForDebug(repairedLocalCues)
+      })
+      if (shouldUseRepaired) {
         bestLocalCues = repairedLocalCues
       }
 
@@ -665,11 +784,28 @@ export async function transcribeAudio(
           WINDOW_RETRY_OVERLAP_S
         )
         const windowedCues = await transcribeRetryWindows(seg, retryWindows, `${segmentBaseName}_window`)
+        const shouldUseWindowed = shouldPreferCueCandidate(
+          bestLocalCues,
+          windowedCues,
+          LARGE_GAP_THRESHOLD_S
+        )
+        logGapDebug('segment-windowed-decision', {
+          ...segmentLogContext,
+          windowCount: retryWindows.length,
+          preferWindowed: shouldUseWindowed,
+          current: summarizeCueQualityForDebug(bestLocalCues),
+          windowed: summarizeCueQualityForDebug(windowedCues)
+        })
 
-        if (shouldPreferCandidate(bestLocalCues, windowedCues)) {
+        if (shouldUseWindowed) {
           bestLocalCues = windowedCues
         }
       }
+
+      logGapDebug('segment-final', {
+        ...segmentLogContext,
+        final: summarizeCueQualityForDebug(bestLocalCues)
+      })
 
       if (bestLocalCues.length === 0 && seg.durationSec >= 120) {
         throw new Error(
