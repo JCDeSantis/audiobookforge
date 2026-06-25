@@ -48,6 +48,15 @@ textarea {
   font: inherit;
 }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role='button']:focus-visible {
+  outline: 2px solid rgba(248, 113, 113, 0.95);
+  outline-offset: 3px;
+}
+
 button {
   cursor: pointer;
 }

@@ -21,6 +21,9 @@ const electron = {
     remove: (jobId: string) => ipcRenderer.invoke(IPC.QUEUE_REMOVE, jobId),
     reorder: (orderedIds: string[]) => ipcRenderer.invoke(IPC.QUEUE_REORDER, orderedIds),
     cancel: (jobId: string) => ipcRenderer.invoke(IPC.QUEUE_CANCEL, jobId),
+    pause: (jobId: string) => ipcRenderer.invoke(IPC.QUEUE_PAUSE, jobId),
+    resume: (jobId: string) => ipcRenderer.invoke(IPC.QUEUE_RESUME, jobId),
+    retry: (jobId: string, model?: string) => ipcRenderer.invoke(IPC.QUEUE_RETRY, { jobId, model }),
     getAll: () => ipcRenderer.invoke(IPC.QUEUE_GET_ALL),
     clearDone: () => ipcRenderer.invoke(IPC.QUEUE_CLEAR_DONE),
     onUpdated: (callback: (jobs: unknown[]) => void) => {
@@ -41,11 +44,16 @@ const electron = {
     cancel: () => ipcRenderer.invoke(IPC.WHISPER_CANCEL),
     getStorageInfo: () => ipcRenderer.invoke(IPC.WHISPER_STORAGE_INFO),
     clearModels: () => ipcRenderer.invoke(IPC.WHISPER_CLEAR_MODELS),
+    deleteModel: (model: string) => ipcRenderer.invoke(IPC.WHISPER_DELETE_MODEL, model),
     onProgress: (callback: (event: unknown) => void) => {
       const handler = (_event: Electron.IpcRendererEvent, data: unknown): void => callback(data)
       ipcRenderer.on(IPC.WHISPER_PROGRESS, handler)
       return () => ipcRenderer.removeListener(IPC.WHISPER_PROGRESS, handler)
     }
+  },
+
+  diagnostics: {
+    export: () => ipcRenderer.invoke(IPC.DIAGNOSTICS_EXPORT)
   }
 }
 

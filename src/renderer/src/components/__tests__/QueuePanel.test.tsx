@@ -23,6 +23,7 @@ function createJob(overrides: Partial<TranscriptionJob> = {}): TranscriptionJob 
     progress: null,
     srtPath: null,
     srtPaths: [],
+    qualityReport: null,
     error: null,
     createdAt: Date.now(),
     startedAt: null,

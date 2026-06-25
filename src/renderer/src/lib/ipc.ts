@@ -21,10 +21,13 @@ export interface ElectronAPI {
     showInExplorer: (path: string) => Promise<void>
   }
   queue: {
-    add: (job: Omit<TranscriptionJob, 'id' | 'status' | 'progress' | 'srtPath' | 'srtPaths' | 'error' | 'createdAt' | 'startedAt' | 'completedAt'>) => Promise<TranscriptionJob>
+    add: (job: Omit<TranscriptionJob, 'id' | 'status' | 'progress' | 'srtPath' | 'srtPaths' | 'qualityReport' | 'error' | 'createdAt' | 'startedAt' | 'completedAt'>) => Promise<TranscriptionJob>
     remove: (jobId: string) => Promise<void>
     reorder: (orderedIds: string[]) => Promise<void>
     cancel: (jobId: string) => Promise<void>
+    pause: (jobId: string) => Promise<void>
+    resume: (jobId: string) => Promise<void>
+    retry: (jobId: string, model?: TranscriptionJob['model']) => Promise<TranscriptionJob>
     getAll: () => Promise<TranscriptionJob[]>
     clearDone: () => Promise<void>
     onUpdated: (callback: (jobs: TranscriptionJob[]) => void) => () => void
@@ -39,7 +42,11 @@ export interface ElectronAPI {
     cancel: () => Promise<void>
     getStorageInfo: () => Promise<WhisperStorageInfo>
     clearModels: () => Promise<void>
+    deleteModel: (model: TranscriptionJob['model']) => Promise<void>
     onProgress: (callback: (event: WhisperProgressEvent) => void) => () => void
+  }
+  diagnostics: {
+    export: () => Promise<string | null>
   }
 }
 

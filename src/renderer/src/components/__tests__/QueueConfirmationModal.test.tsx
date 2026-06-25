@@ -72,6 +72,7 @@ function createQueuedJob(overrides: Partial<TranscriptionJob> = {}): Transcripti
     progress: null,
     srtPath: null,
     srtPaths: [],
+    qualityReport: null,
     error: null,
     createdAt: Date.now(),
     startedAt: null,

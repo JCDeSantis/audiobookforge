@@ -70,7 +70,11 @@ function authHeaders(apiKey: string): Record<string, string> {
 function sanitizeFileNamePart(value: string): string {
   const sanitized = value
     .replace(/\.(m4b|mp3|m4a|wav|flac|ogg|aac)$/i, '')
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ')
+    .replace(/[<>:"/\\|?*]/g, ' ')
+    .replace(
+      /./g,
+      (char) => (char.charCodeAt(0) < 32 ? ' ' : char)
+    )
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[. ]+$/g, '')

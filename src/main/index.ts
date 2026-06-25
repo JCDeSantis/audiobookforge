@@ -6,6 +6,7 @@ import { registerFilesIpc } from './ipc/files.ipc'
 import { registerAbsIpc } from './ipc/abs.ipc'
 import { registerQueueIpc, setQueueWindow } from './ipc/queue.ipc'
 import { registerWhisperIpc } from './ipc/whisper.ipc'
+import { registerDiagnosticsIpc } from './ipc/diagnostics.ipc'
 import { isSafeExternalUrl } from '../shared/urlSafety'
 
 function getWindowIconPath(): string {
@@ -40,6 +41,23 @@ function createWindow(): void {
   })
 
   setQueueWindow(mainWindow)
+
+  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(false)
+  })
+
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          app.isPackaged
+            ? "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: http://localhost:* http://127.0.0.1:*"
+            : "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws://localhost:* http://localhost:* http://127.0.0.1:*"
+        ]
+      }
+    })
+  })
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
@@ -78,6 +96,7 @@ app.whenReady().then(() => {
   registerAbsIpc()
   registerQueueIpc()
   registerWhisperIpc()
+  registerDiagnosticsIpc()
 
   createWindow()
 

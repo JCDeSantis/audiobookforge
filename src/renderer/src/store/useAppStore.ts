@@ -25,7 +25,7 @@ const defaultWizard: WizardState = {
   absItem: null,
   absItems: [],
   epubPath: null,
-  model: 'large-v3-turbo',
+  model: 'large-v3-turbo-q5_0',
   outputFolder: null
 }
 
@@ -101,7 +101,7 @@ function isFreshDraft(wizard: WizardState, defaultModel: WhisperModel): boolean 
 
 export const useAppStore = create<AppStore>((set) => ({
   // Settings
-  settings: { absUrl: '', defaultModel: 'large-v3-turbo' },
+  settings: { absUrl: '', defaultModel: 'large-v3-turbo-q5_0' },
   setSettings: (s) =>
     set((state) => ({
       settings: s,

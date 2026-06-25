@@ -1,6 +1,6 @@
 # Audiobook Forge
 
-![Version](https://img.shields.io/badge/version-v1.0.5-d92a3d?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-v1.0.6-d92a3d?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/platform-Windows-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 ![License](https://img.shields.io/badge/license-MIT-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 
@@ -65,6 +65,12 @@ Recommended install flow:
 6. Pick a default Whisper model.
 7. Select either local audiobook files or a book from Audiobookshelf.
 8. Queue the job and let Audiobook Forge generate the subtitles.
+
+Model guidance:
+
+- `Large V3 Turbo` (`large-v3-turbo-q5_0`, about 547 MB) is the practical default for most users because it keeps the current Whisper Turbo quality/speed profile with a much smaller download.
+- `Large V3 Turbo (Full)` (`large-v3-turbo`, about 1.51 GB) is available when maximum full-precision output matters more than disk, memory, and CPU/GPU time.
+- Smaller models (`tiny`, `base`, `small`, `medium`) can be useful for quick tests or slower machines, but should be checked against audiobook narration quality before batch processing a library.
 
 Portable build note:
 
@@ -135,6 +141,16 @@ That pipeline is responsible for:
 - splitting subtitles across multi-part books
 - uploading generated subtitles back into Audiobookshelf when supported
 
+## Benchmarking Subtitle Accuracy
+
+Use the lightweight SRT scorer when comparing models or backend changes:
+
+```sh
+npm run score:srt -- --reference path/to/reference.txt --srt path/to/transcript.srt
+```
+
+The script prints word error rate, edit count, and word counts as JSON so model tests can be compared consistently across audiobook samples.
+
 ## Release Automation
 
 This repo includes GitHub Actions-based release automation for Windows builds:
@@ -145,7 +161,7 @@ This repo includes GitHub Actions-based release automation for Windows builds:
 Release behavior:
 
 - Pushes and pull requests run validation
-- Version tags such as `v1.0.5` build Windows release assets
+- Version tags such as `v1.0.6` build Windows release assets
 - The release workflow uploads both the installer and the portable unpacked zip to GitHub Releases
 - Workflow dispatch can be used for manual release builds
 

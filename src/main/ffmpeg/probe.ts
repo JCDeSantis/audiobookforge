@@ -51,6 +51,10 @@ export async function probeFile(filePath: string): Promise<ProbeResult> {
 
   const data = JSON.parse(stdout)
   const format = data.format ?? {}
+  const duration = parseFloat(format.duration ?? '0')
+  if (!Number.isFinite(duration)) {
+    throw new Error(`Could not read duration for ${filePath}`)
+  }
   const streams: Array<{ codec_type: string; codec_name: string }> = data.streams ?? []
   const chapters: Array<{
     start_time?: string
@@ -75,7 +79,7 @@ export async function probeFile(filePath: string): Promise<ProbeResult> {
     .filter((chapter) => chapter.endSec > chapter.startSec)
 
   return {
-    duration: parseFloat(format.duration ?? '0'),
+    duration,
     format: format.format_name ?? 'unknown',
     tags: format.tags ?? {},
     hasCoverArt,

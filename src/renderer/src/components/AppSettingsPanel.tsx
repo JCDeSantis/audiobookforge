@@ -20,7 +20,11 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
   const [storageInfo, setStorageInfo] = useState<WhisperStorageInfo | null>(null)
   const [storageError, setStorageError] = useState<string | null>(null)
   const [clearingModels, setClearingModels] = useState(false)
+  const [deletingModel, setDeletingModel] = useState<WhisperModel | null>(null)
   const [clearResult, setClearResult] = useState<string | null>(null)
+  const [diagnosticsResult, setDiagnosticsResult] = useState<string | null>(null)
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null)
+  const [exportingDiagnostics, setExportingDiagnostics] = useState(false)
 
   useEffect(() => {
     let isActive = true
@@ -85,6 +89,44 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
       )
     } finally {
       setClearingModels(false)
+    }
+  }
+
+  const refreshStorageInfo = async (): Promise<void> => {
+    const updatedInfo = await window.electron.whisper.getStorageInfo()
+    setStorageInfo(updatedInfo)
+  }
+
+  const handleDeleteModel = async (model: WhisperModel): Promise<void> => {
+    setDeletingModel(model)
+    setStorageError(null)
+    setClearResult(null)
+
+    try {
+      await window.electron.whisper.deleteModel(model)
+      await refreshStorageInfo()
+      setClearResult('Whisper model removed.')
+    } catch (error) {
+      setStorageError(error instanceof Error ? error.message : 'Failed to remove Whisper model.')
+    } finally {
+      setDeletingModel(null)
+    }
+  }
+
+  const handleExportDiagnostics = async (): Promise<void> => {
+    setExportingDiagnostics(true)
+    setDiagnosticsResult(null)
+    setDiagnosticsError(null)
+
+    try {
+      const exportedPath = await window.electron.diagnostics.export()
+      if (exportedPath) {
+        setDiagnosticsResult(`Diagnostics exported to ${exportedPath}`)
+      }
+    } catch (error) {
+      setDiagnosticsError(error instanceof Error ? error.message : 'Failed to export diagnostics.')
+    } finally {
+      setExportingDiagnostics(false)
     }
   }
 
@@ -221,7 +263,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
             </select>
           </label>
 
-          <div className="rounded-[22px] border border-[#341616] bg-[#120707] px-4 py-4">
+          <div className="rounded-lg border border-[#341616] bg-[#120707] px-4 py-4">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="max-w-lg">
                 <div className="text-sm font-medium text-[#f6e2e2]">Whisper Storage</div>
@@ -242,7 +284,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
               </div>
 
               <button
-                className="rounded-full border border-[#5b2626] px-4 py-2 text-sm font-medium text-[#f0cbcb] transition-colors hover:border-[#dc2626] hover:text-[#fff4f4] disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-md border border-[#5b2626] px-4 py-2 text-sm font-medium text-[#f0cbcb] transition-colors hover:border-[#dc2626] hover:text-[#fff4f4] disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={clearingModels || installedModelCount === 0}
                 onClick={handleClearModels}
                 type="button"
@@ -251,13 +293,76 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
               </button>
             </div>
 
-            {clearResult && <div className="mt-3 text-sm text-[#9fe0bb]">{clearResult}</div>}
+            {storageInfo && (
+              <div className="mt-4 grid gap-2">
+                {storageInfo.models.map((model) => (
+                  <div
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[#281313] bg-[#0b0404] px-3 py-2 text-xs"
+                    key={model.id}
+                  >
+                    <div>
+                      <div className="font-medium text-[#f4dddd]">{model.name}</div>
+                      <div className="text-[#a87f7f]">
+                        {model.downloaded
+                          ? `${(model.diskBytes / 1024 / 1024).toFixed(1)} MB installed`
+                          : `${model.size} not installed`}
+                      </div>
+                    </div>
+                    <button
+                      className="rounded-md border border-[#3f1d1d] px-2.5 py-1 text-[#e6bbbb] transition-colors hover:border-[#dc2626] disabled:opacity-40"
+                      disabled={!model.downloaded || deletingModel === model.id}
+                      onClick={() => handleDeleteModel(model.id)}
+                      type="button"
+                    >
+                      {deletingModel === model.id ? 'Removing...' : 'Delete'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {clearResult && (
+              <div className="mt-3 text-sm text-[#9fe0bb]" role="status">
+                {clearResult}
+              </div>
+            )}
             {storageError && (
-              <div className="mt-3 text-sm leading-6 text-[#ff9f9f]">{storageError}</div>
+              <div className="mt-3 text-sm leading-6 text-[#ff9f9f]" role="alert">
+                {storageError}
+              </div>
             )}
           </div>
 
-          <div className="rounded-[22px] border border-[#341616] bg-[#120707] px-4 py-4">
+          <div className="rounded-lg border border-[#341616] bg-[#120707] px-4 py-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium text-[#f6e2e2]">Diagnostics</div>
+                <div className="mt-1 text-xs leading-5 text-[#a87f7f]">
+                  Exports sanitized app, system, queue, and model details for troubleshooting.
+                </div>
+              </div>
+              <button
+                className="rounded-md border border-[#5b2626] px-4 py-2 text-sm font-medium text-[#f0cbcb] transition-colors hover:border-[#dc2626] hover:text-[#fff4f4] disabled:opacity-50"
+                disabled={exportingDiagnostics}
+                onClick={handleExportDiagnostics}
+                type="button"
+              >
+                {exportingDiagnostics ? 'Exporting...' : 'Export Diagnostics'}
+              </button>
+            </div>
+            {diagnosticsResult && (
+              <div className="mt-3 text-sm text-[#9fe0bb]" role="status">
+                {diagnosticsResult}
+              </div>
+            )}
+            {diagnosticsError && (
+              <div className="mt-3 text-sm text-[#ff9f9f]" role="alert">
+                {diagnosticsError}
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-[#341616] bg-[#120707] px-4 py-4">
             <div className="flex flex-wrap items-center gap-3">
               <button
                 className="rounded-full border border-[#5b2626] px-4 py-2 text-sm font-medium text-[#f0cbcb] transition-colors hover:border-[#dc2626] hover:text-[#fff4f4] disabled:cursor-not-allowed disabled:opacity-50"

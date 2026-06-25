@@ -224,10 +224,12 @@ function toSec(h: string, m: string, s: string, ms: string): number {
 }
 
 function fromSec(totalSec: number): string {
-  const ms = Math.round((totalSec % 1) * 1000)
-  const sec = Math.floor(totalSec) % 60
-  const min = Math.floor(totalSec / 60) % 60
-  const hr = Math.floor(totalSec / 3600)
+  const totalMs = Math.max(0, Math.round(totalSec * 1000))
+  const ms = totalMs % 1000
+  const totalSeconds = Math.floor(totalMs / 1000)
+  const sec = totalSeconds % 60
+  const min = Math.floor(totalSeconds / 60) % 60
+  const hr = Math.floor(totalSeconds / 3600)
   return `${p2(hr)}:${p2(min)}:${p2(sec)},${p3(ms)}`
 }
 

@@ -13,11 +13,12 @@ import { join, basename, extname, isAbsolute } from 'path'
 import axios from 'axios'
 import { v4 as uuidv4 } from 'uuid'
 import Epub from 'epub2'
-import { cancelTranscription, transcribeAudio } from '../whisper/transcribe'
+import { cancelTranscription, clearTranscriptionCheckpoint, transcribeAudio } from '../whisper/transcribe'
 import { isBinaryDownloaded } from '../whisper/binary'
 import { isModelDownloaded, WHISPER_MODELS } from '../whisper/models'
-import { probeFile } from '../ffmpeg/probe'
-import { splitSrtByDurations } from '../whisper/segments'
+import { probeFile, sumDurations } from '../ffmpeg/probe'
+import { parseSrtContent, splitSrtByDurations } from '../whisper/segments'
+import { createQualityReport } from '../whisper/quality'
 import { createJobProgressPlan, mapOverallProgressEvent } from '../../shared/jobProgress'
 import { buildAbsAudioPaths, fetchAbsBook, uploadSubtitleToAbs } from './abs.ipc'
 import { loadApiKey, loadSettings } from './settings.ipc'
@@ -27,13 +28,23 @@ import type { TranscriptionJob, WhisperModel, WhisperProgressEvent } from '../..
 
 type QueueAddPayload = Omit<
   TranscriptionJob,
-  'id' | 'status' | 'progress' | 'srtPath' | 'srtPaths' | 'error' | 'createdAt' | 'startedAt' | 'completedAt'
+  | 'id'
+  | 'status'
+  | 'progress'
+  | 'srtPath'
+  | 'srtPaths'
+  | 'qualityReport'
+  | 'error'
+  | 'createdAt'
+  | 'startedAt'
+  | 'completedAt'
 >
 
 const VALID_MODELS = new Set<WhisperModel>(WHISPER_MODELS.map((model) => model.id))
 const VALID_JOB_STATUSES = new Set<TranscriptionJob['status']>([
   'queued',
   'running',
+  'paused',
   'done',
   'failed',
   'cancelled'
@@ -42,6 +53,7 @@ const VALID_JOB_STATUSES = new Set<TranscriptionJob['status']>([
 let jobs: TranscriptionJob[] = []
 let activeJobId: string | null = null
 let cancelRequested = false
+let pauseRequested = false
 let activeDownloadAbortController: AbortController | null = null
 let win: BrowserWindow | null = null
 let queueIpcRegistered = false
@@ -168,6 +180,7 @@ function hydrateQueueJob(rawJob: Partial<TranscriptionJob>): TranscriptionJob | 
       srtPaths: Array.isArray(rawJob.srtPaths)
         ? rawJob.srtPaths.filter((path): path is string => typeof path === 'string' && isAbsolute(path))
         : [],
+      qualityReport: rawJob.qualityReport ?? null,
       error: typeof rawJob.error === 'string' ? rawJob.error : null,
       createdAt: typeof rawJob.createdAt === 'number' ? rawJob.createdAt : Date.now(),
       startedAt: typeof rawJob.startedAt === 'number' ? rawJob.startedAt : null,
@@ -207,6 +220,13 @@ export function setQueueWindow(browserWindow: BrowserWindow): void {
 
 export function requestCancel(): void {
   cancelRequested = true
+  pauseRequested = false
+  activeDownloadAbortController?.abort()
+}
+
+function requestPause(): void {
+  pauseRequested = true
+  cancelRequested = true
   activeDownloadAbortController?.abort()
 }
 
@@ -235,7 +255,11 @@ function cleanTempDir(jobId: string): void {
 function sanitizeFileNamePart(value: string): string {
   const sanitized = value
     .replace(/\.(m4b|mp3|m4a|wav|flac|ogg|aac)$/i, '')
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, ' ')
+    .replace(/[<>:"/\\|?*]/g, ' ')
+    .replace(
+      /./g,
+      (char) => (char.charCodeAt(0) < 32 ? ' ' : char)
+    )
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[. ]+$/g, '')
@@ -314,6 +338,7 @@ async function resolveAbsAudioPaths(job: TranscriptionJob): Promise<{
   baseUrl: string
   apiKey: string
   ebookPath: string | null
+  uploadWarning: string | null
 }> {
   if (!job.absItemId) {
     throw new Error('AudioBookShelf jobs require an item id.')
@@ -351,7 +376,12 @@ async function resolveAbsAudioPaths(job: TranscriptionJob): Promise<{
     audioPaths,
     baseUrl,
     apiKey,
-    ebookPath: book.ebookPath ?? null
+    ebookPath: book.ebookPath ?? null,
+    uploadWarning: book.isFile
+      ? 'ABS upload preflight failed because this item is stored as a single file. The subtitle will be saved locally instead.'
+      : !book.libraryId || !book.folderId
+        ? 'ABS upload preflight could not confirm the library folder. The subtitle will be saved locally instead.'
+        : null
   }
 }
 
@@ -363,11 +393,13 @@ async function runNext(): Promise<void> {
 
   activeJobId = next.id
   cancelRequested = false
+  pauseRequested = false
   next.status = 'running'
   next.progress = null
   next.error = null
   next.srtPath = null
   next.srtPaths = []
+  next.qualityReport = null
   next.startedAt = Date.now()
   saveAndBroadcast()
 
@@ -375,6 +407,7 @@ async function runNext(): Promise<void> {
     let audioPaths = next.audioFiles
     let absBaseUrl: string | null = null
     let absApiKey: string | null = null
+    let absUploadWarning: string | null = null
 
     if (next.source === 'abs') {
       const resolvedAbs = await resolveAbsAudioPaths(next)
@@ -382,6 +415,7 @@ async function runNext(): Promise<void> {
       absBaseUrl = resolvedAbs.baseUrl
       absApiKey = resolvedAbs.apiKey
       next.epubPath = resolvedAbs.ebookPath ?? next.epubPath
+      absUploadWarning = resolvedAbs.uploadWarning
     }
 
     if (!audioPaths || audioPaths.length === 0) {
@@ -494,12 +528,17 @@ async function runNext(): Promise<void> {
       },
       audioPaths,
       next.model,
-      promptText || undefined
+      promptText || undefined,
+      { checkpointKey: next.id }
     )
 
     if (cancelRequested) {
       throw new Error('Cancelled')
     }
+
+    const mergedSrt = readFileSync(srtPath, 'utf-8')
+    const qualityDuration = await sumDurations(audioPaths).catch(() => 0)
+    next.qualityReport = createQualityReport(parseSrtContent(mergedSrt), qualityDuration)
 
     if (next.source === 'abs' && next.absItemId) {
       if (!absBaseUrl || !absApiKey) {
@@ -507,6 +546,10 @@ async function runNext(): Promise<void> {
       }
 
       try {
+        if (absUploadWarning) {
+          throw new Error(absUploadWarning)
+        }
+
         emitProgress({ phase: 'uploading', percent: 0 })
         await uploadSubtitleToAbs(absBaseUrl, absApiKey, next.absItemId, srtPath, (percent) => {
           emitProgress({ phase: 'uploading', percent })
@@ -521,6 +564,14 @@ async function runNext(): Promise<void> {
           getJobSrtFileName(next)
         )
         next.srtPaths = next.srtPath ? [next.srtPath] : []
+        next.qualityReport = createQualityReport(parseSrtContent(mergedSrt), qualityDuration, [
+          {
+            severity: 'warning',
+            code: 'upload-fallback',
+            message:
+              absUploadWarning ?? 'AudioBookShelf upload failed, so the subtitle was saved locally.'
+          }
+        ])
       }
     } else if (next.outputPath) {
       if (next.audioFiles.length > 1) {
@@ -537,12 +588,17 @@ async function runNext(): Promise<void> {
 
     next.status = 'done'
     next.completedAt = Date.now()
+    clearTranscriptionCheckpoint(next.id)
   } catch (error) {
     const isCancelled =
       cancelRequested || (error instanceof Error && error.message === 'Cancelled')
 
-    if (isCancelled) {
+    if (pauseRequested) {
+      next.status = 'paused'
+      next.startedAt = null
+    } else if (isCancelled) {
       next.status = 'cancelled'
+      clearTranscriptionCheckpoint(next.id)
     } else {
       next.status = 'failed'
       next.error = error instanceof Error ? error.message : String(error)
@@ -556,6 +612,7 @@ async function runNext(): Promise<void> {
 
     activeDownloadAbortController = null
     activeJobId = null
+    pauseRequested = false
     saveAndBroadcast()
     void runNext()
   }
@@ -589,6 +646,7 @@ export function registerQueueIpc(): void {
       progress: null,
       srtPath: null,
       srtPaths: [],
+      qualityReport: null,
       error: null,
       createdAt: Date.now(),
       startedAt: null,
@@ -606,6 +664,12 @@ export function registerQueueIpc(): void {
       throw new Error('Invalid job id.')
     }
 
+    if (jobId === activeJobId) {
+      requestCancel()
+      cancelTranscription()
+    }
+
+    clearTranscriptionCheckpoint(jobId)
     jobs = jobs.filter((job) => job.id !== jobId)
     saveAndBroadcast()
   })
@@ -642,11 +706,84 @@ export function registerQueueIpc(): void {
     }
   })
 
+  ipcMain.handle(IPC.QUEUE_PAUSE, (_event, jobId: string) => {
+    if (!isNonEmptyString(jobId)) {
+      throw new Error('Invalid job id.')
+    }
+
+    const job = jobs.find((jobItem) => jobItem.id === jobId)
+    if (!job) return
+
+    if (job.id === activeJobId) {
+      requestPause()
+      cancelTranscription()
+    } else if (job.status === 'queued') {
+      job.status = 'paused'
+      saveAndBroadcast()
+    }
+  })
+
+  ipcMain.handle(IPC.QUEUE_RESUME, (_event, jobId: string) => {
+    if (!isNonEmptyString(jobId)) {
+      throw new Error('Invalid job id.')
+    }
+
+    const job = jobs.find((jobItem) => jobItem.id === jobId)
+    if (!job || job.status !== 'paused') return
+
+    job.status = 'queued'
+    job.error = null
+    job.completedAt = null
+    saveAndBroadcast()
+    void runNext()
+  })
+
+  ipcMain.handle(
+    IPC.QUEUE_RETRY,
+    (_event, payload: { jobId?: string; model?: WhisperModel } | string) => {
+      const jobId = typeof payload === 'string' ? payload : payload?.jobId
+      const model = typeof payload === 'string' ? undefined : payload?.model
+      if (!isNonEmptyString(jobId)) {
+        throw new Error('Invalid job id.')
+      }
+
+      const original = jobs.find((jobItem) => jobItem.id === jobId)
+      if (!original) {
+        throw new Error('Job not found.')
+      }
+
+      const job: TranscriptionJob = {
+        ...original,
+        id: uuidv4(),
+        model: model ? sanitizeModel(model) : original.model,
+        status: 'queued',
+        progress: null,
+        srtPath: null,
+        srtPaths: [],
+        qualityReport: null,
+        error: null,
+        createdAt: Date.now(),
+        startedAt: null,
+        completedAt: null
+      }
+
+      jobs.push(job)
+      saveAndBroadcast()
+      void runNext()
+      return job
+    }
+  )
+
   ipcMain.handle(IPC.QUEUE_GET_ALL, () => {
     return jobs
   })
 
   ipcMain.handle(IPC.QUEUE_CLEAR_DONE, () => {
+    for (const job of jobs) {
+      if (job.status === 'done' || job.status === 'failed' || job.status === 'cancelled') {
+        clearTranscriptionCheckpoint(job.id)
+      }
+    }
     jobs = jobs.filter(
       (job) => job.status !== 'done' && job.status !== 'failed' && job.status !== 'cancelled'
     )

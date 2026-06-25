@@ -7,7 +7,8 @@ import {
   writeFileSync,
   createWriteStream,
   statSync,
-  appendFileSync
+  appendFileSync,
+  rmSync
 } from 'fs'
 import { unlink } from 'fs/promises'
 import { cpus } from 'os'
@@ -46,6 +47,10 @@ let activeAbortController: AbortController | null = null
 
 type ProgressCallback = (progress: Omit<WhisperProgressEvent, 'jobId'>) => void
 
+interface TranscribeOptions {
+  checkpointKey?: string
+}
+
 const LARGE_GAP_THRESHOLD_S = 10
 const GAP_REPAIR_CONTEXT_S = 6
 const WINDOW_RETRY_DURATION_S = 240
@@ -56,6 +61,25 @@ const GAP_DEBUG_LOG_FILENAME = 'gap-debug.log'
 
 let gapDebugLogPath: string | null = null
 let gapDebugFileWriteDisabled = false
+
+function sanitizeCheckpointKey(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 100) || 'job'
+}
+
+function getCheckpointDir(checkpointKey: string): string {
+  return join(app.getPath('userData'), 'checkpoints', sanitizeCheckpointKey(checkpointKey))
+}
+
+function getCheckpointPath(checkpointDir: string, segmentIndex: number): string {
+  return join(checkpointDir, `segment_${segmentIndex.toString().padStart(3, '0')}.srt`)
+}
+
+export function clearTranscriptionCheckpoint(checkpointKey: string): void {
+  const checkpointDir = getCheckpointDir(checkpointKey)
+  if (existsSync(checkpointDir)) {
+    rmSync(checkpointDir, { recursive: true, force: true })
+  }
+}
 
 class WhisperSegmentProcessError extends Error {
   exitCode: number | null
@@ -157,7 +181,8 @@ async function downloadModel(
     signal
   })
 
-  const total = parseInt(response.headers['content-length'] || '0', 10)
+  const contentLength = response.headers['content-length']
+  const total = parseInt(typeof contentLength === 'string' ? contentLength : '0', 10)
   let downloaded = 0
 
   await new Promise<void>((resolve, reject) => {
@@ -218,7 +243,8 @@ export async function transcribeAudio(
   onProgress: ProgressCallback,
   audioPaths: string[],
   model: WhisperModel,
-  promptText?: string
+  promptText?: string,
+  options: TranscribeOptions = {}
 ): Promise<string> {
   activeAbortController?.abort()
 
@@ -280,6 +306,10 @@ export async function transcribeAudio(
     mkdirSync(outputDir, { recursive: true })
     const srtBase = join(outputDir, `transcript_${Date.now()}`)
     const srtPath = `${srtBase}.srt`
+    const checkpointDir = options.checkpointKey ? getCheckpointDir(options.checkpointKey) : null
+    if (checkpointDir) {
+      mkdirSync(checkpointDir, { recursive: true })
+    }
 
     const ffmpeg = getFfmpegPath()
     let whisperExe = getWhisperExe()!
@@ -657,6 +687,22 @@ export async function transcribeAudio(
 
       const segPad = seg.index.toString().padStart(3, '0')
       const segmentBaseName = `segment_${segPad}`
+      const checkpointPath = checkpointDir ? getCheckpointPath(checkpointDir, seg.index) : null
+      if (checkpointPath && existsSync(checkpointPath)) {
+        const checkpointSrt = readFileSync(checkpointPath, 'utf-8')
+        if (checkpointSrt.trim()) {
+          srtContents.push(checkpointSrt)
+          onProgress({
+            phase: 'transcribing',
+            percent: Math.min(Math.round((seg.endSec / totalDuration) * 100), 99),
+            segmentIndex: seg.index,
+            segmentCount: segments.length,
+            liveText: `Resumed segment ${seg.index + 1} from checkpoint`
+          })
+          continue
+        }
+      }
+
       const baseRawSrt = await transcribeWindow(segmentBaseName, seg.startSec, seg.durationSec, seg, true)
 
       let bestLocalCues = parseSrtContent(baseRawSrt)
@@ -815,7 +861,11 @@ export async function transcribeAudio(
 
       const finalLocalSrt = serializeSrtCues(bestLocalCues)
       if (finalLocalSrt.trim()) {
-        srtContents.push(offsetSrtContent(finalLocalSrt, seg.startSec))
+        const finalSegmentSrt = offsetSrtContent(finalLocalSrt, seg.startSec)
+        srtContents.push(finalSegmentSrt)
+        if (checkpointPath) {
+          writeFileSync(checkpointPath, finalSegmentSrt, 'utf-8')
+        }
       }
     }
 

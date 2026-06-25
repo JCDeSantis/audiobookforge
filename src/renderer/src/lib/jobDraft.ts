@@ -18,7 +18,16 @@ export interface JobDraft {
 
 export type QueueAddPayload = Omit<
   TranscriptionJob,
-  'id' | 'status' | 'progress' | 'srtPath' | 'srtPaths' | 'error' | 'createdAt' | 'startedAt' | 'completedAt'
+  | 'id'
+  | 'status'
+  | 'progress'
+  | 'srtPath'
+  | 'srtPaths'
+  | 'qualityReport'
+  | 'error'
+  | 'createdAt'
+  | 'startedAt'
+  | 'completedAt'
 >
 
 export function selectLocalFiles(draft: JobDraft, audioFiles: string[]): JobDraft {
@@ -96,7 +105,9 @@ export function buildQueueJobData(draft: JobDraft, settings: AppSettings): Queue
   return firstPayload
 }
 
-export function buildQueueJobPayloads(draft: JobDraft, _settings: AppSettings): QueueAddPayload[] {
+export function buildQueueJobPayloads(draft: JobDraft, settings: AppSettings): QueueAddPayload[] {
+  const model = draft.model ?? settings.defaultModel
+
   if (draft.source === 'local') {
     return [
       {
@@ -109,7 +120,7 @@ export function buildQueueJobPayloads(draft: JobDraft, _settings: AppSettings): 
         absFolderId: null,
         absAuthorName: null,
         epubPath: draft.epubPath,
-        model: draft.model
+        model
       }
     ]
   }
@@ -126,7 +137,7 @@ export function buildQueueJobPayloads(draft: JobDraft, _settings: AppSettings): 
       absFolderId: absItem.folderId,
       absAuthorName: absItem.authorName,
       epubPath: absItem.ebookPath ?? draft.epubPath,
-      model: draft.model
+      model
     }))
   }
 

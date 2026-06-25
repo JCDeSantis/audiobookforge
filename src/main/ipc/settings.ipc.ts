@@ -9,6 +9,7 @@ import type { AppSettings, WhisperModel } from '../../shared/types'
 
 const SERVICE = 'audiobookforge'
 const ACCOUNT = 'abs-api-key'
+const DEFAULT_MODEL: WhisperModel = 'large-v3-turbo-q5_0'
 const VALID_MODELS = new Set<WhisperModel>(WHISPER_MODELS.map((model) => model.id))
 
 function getSettingsPath(): string {
@@ -18,7 +19,7 @@ function getSettingsPath(): string {
 function getDefaultModel(model: unknown): WhisperModel {
   return typeof model === 'string' && VALID_MODELS.has(model as WhisperModel)
     ? (model as WhisperModel)
-    : 'large-v3-turbo'
+    : DEFAULT_MODEL
 }
 
 export function loadSettings(): AppSettings {
@@ -32,7 +33,7 @@ export function loadSettings(): AppSettings {
       defaultModel: getDefaultModel(parsed.defaultModel)
     }
   } catch {
-    return { absUrl: '', defaultModel: 'large-v3-turbo' }
+    return { absUrl: '', defaultModel: DEFAULT_MODEL }
   }
 }
 

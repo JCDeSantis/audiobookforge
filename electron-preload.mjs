@@ -1,8 +1,6 @@
 // Preloaded via --import to fix require('electron') resolution
 // This file patches the electron module resolver to use the correct built-in
 
-import { createRequire } from 'module';
-import { fileURLToPath } from 'url';
 import Module from 'module';
 
 // Only apply fix when running inside Electron

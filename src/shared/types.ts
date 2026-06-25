@@ -39,12 +39,43 @@ export interface WhisperStorageInfo {
   binaryVersion: string
   gpuEnabled: boolean
   gpuDetected: boolean
+  modelDir: string
+  binaryDir: string
   models: Array<{
     id: WhisperModel
     name: string
     size: string
+    sizeBytes: number
+    diskBytes: number
     downloaded: boolean
+    lastModified: number | null
   }>
+}
+
+export interface TranscriptionQualityIssue {
+  severity: 'info' | 'warning' | 'error'
+  code:
+    | 'no-cues'
+    | 'low-coverage'
+    | 'large-gap'
+    | 'long-cue'
+    | 'repeated-text'
+    | 'upload-fallback'
+  message: string
+  startSec?: number
+  endSec?: number
+}
+
+export interface TranscriptionQualityReport {
+  cueCount: number
+  durationSec: number
+  coverageSec: number
+  coveragePercent: number
+  largestGapSec: number
+  longestCueSec: number
+  issueCount: number
+  issues: TranscriptionQualityIssue[]
+  generatedAt: number
 }
 
 export type WhisperProgressPhase =
@@ -70,7 +101,7 @@ export interface WhisperProgressEvent {
 
 // ─── Queue ───────────────────────────────────────────────────────────────────
 
-export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
+export type JobStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled'
 
 export interface TranscriptionJob {
   id: string
@@ -88,6 +119,7 @@ export interface TranscriptionJob {
   progress: WhisperProgressEvent | null
   srtPath: string | null // temp path during/after transcription
   srtPaths: string[] // all saved subtitle paths for completed local fallback/output jobs
+  qualityReport: TranscriptionQualityReport | null
   error: string | null
   createdAt: number
   startedAt: number | null
@@ -158,6 +190,7 @@ export const IPC = {
   WHISPER_CANCEL: 'whisper:cancel',
   WHISPER_STORAGE_INFO: 'whisper:storage-info',
   WHISPER_CLEAR_MODELS: 'whisper:clear-models',
+  WHISPER_DELETE_MODEL: 'whisper:delete-model',
 
   // Files
   FILES_PICK_AUDIO: 'files:pick-audio',
@@ -170,9 +203,15 @@ export const IPC = {
   QUEUE_REMOVE: 'queue:remove',
   QUEUE_REORDER: 'queue:reorder',
   QUEUE_CANCEL: 'queue:cancel',
+  QUEUE_PAUSE: 'queue:pause',
+  QUEUE_RESUME: 'queue:resume',
+  QUEUE_RETRY: 'queue:retry',
   QUEUE_GET_ALL: 'queue:get-all',
   QUEUE_CLEAR_DONE: 'queue:clear-done',
   QUEUE_UPDATED: 'queue:updated',
+
+  // Diagnostics
+  DIAGNOSTICS_EXPORT: 'diagnostics:export',
 
   // ABS
   ABS_TEST_CONNECTION: 'abs:test-connection',

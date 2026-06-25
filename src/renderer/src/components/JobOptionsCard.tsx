@@ -10,7 +10,7 @@ function fileNameFromPath(path: string | null): string {
 
 function getComposerModelOptionLabel(model: (typeof WHISPER_MODELS)[number]): string {
   const recommendedLabel = model.id === 'large-v3-turbo-q5_0' ? ' (Recommended)' : ''
-  return `${model.name} · ${model.size}${recommendedLabel}`
+  return `${model.name} - ${model.size}${recommendedLabel}`
 }
 
 export function JobOptionsCard(): React.JSX.Element {

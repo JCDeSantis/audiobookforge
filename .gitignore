@@ -3,6 +3,7 @@ dist
 out
 .superpowers
 .worktrees
+.tmp-*
 .DS_Store
 .eslintcache
 *.log*

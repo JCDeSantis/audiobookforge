@@ -4,7 +4,7 @@ import { afterEach } from 'vitest'
 
 const defaultElectronMock = {
   settings: {
-    get: async () => ({ absUrl: '', defaultModel: 'large-v3-turbo' as const }),
+    get: async () => ({ absUrl: '', defaultModel: 'large-v3-turbo-q5_0' as const }),
     setUrl: async () => undefined,
     setApiKey: async () => undefined,
     setDefaultModel: async () => undefined
@@ -22,6 +22,9 @@ const defaultElectronMock = {
     remove: async () => undefined,
     reorder: async () => undefined,
     cancel: async () => undefined,
+    pause: async () => undefined,
+    resume: async () => undefined,
+    retry: async () => undefined,
     getAll: async () => [],
     clearDone: async () => undefined,
     onUpdated: () => () => undefined
@@ -41,10 +44,16 @@ const defaultElectronMock = {
       binaryVersion: '',
       gpuEnabled: false,
       gpuDetected: false,
+      modelDir: '',
+      binaryDir: '',
       models: []
     }),
     clearModels: async () => undefined,
+    deleteModel: async () => undefined,
     onProgress: () => () => undefined
+  },
+  diagnostics: {
+    export: async () => null
   }
 }
 

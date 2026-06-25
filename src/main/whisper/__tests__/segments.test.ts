@@ -4,6 +4,7 @@ import {
   buildSegments,
   buildSegmentsFromChapters,
   findLargeInternalGaps,
+  offsetSrtContent,
   replaceCueRange
 } from '../segments'
 
@@ -106,5 +107,14 @@ describe('buildSegments', () => {
     expect(cues[0].text).toBe('first')
     expect(cues[1].text).toBe('second')
     expect(cues[2].text).toBe('third')
+  })
+
+  it('carries rounded milliseconds into the next second when offsetting SRT timestamps', () => {
+    const result = offsetSrtContent(
+      '1\n00:00:00,999 --> 00:00:01,999\nNearly there\n',
+      0.0006
+    )
+
+    expect(result).toContain('00:00:01,000 --> 00:00:02,000')
   })
 })

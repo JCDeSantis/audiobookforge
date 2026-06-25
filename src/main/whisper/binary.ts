@@ -52,10 +52,14 @@ export function getWhisperExe(): string | null {
           for (const sub2 of readdirSync(sub, { withFileTypes: true })) {
             if (sub2.isDirectory()) candidateDirs.push(join(sub, sub2.name))
           }
-        } catch {}
+        } catch {
+          // Some zip layouts are shallower than others; keep scanning known directories.
+        }
       }
     }
-  } catch {}
+  } catch {
+    // A missing or unreadable bin directory simply means no binary is installed.
+  }
 
   for (const dir of candidateDirs) {
     for (const name of BINARY_NAMES) {
@@ -76,7 +80,9 @@ export async function detectNvidiaGpu(): Promise<boolean> {
   try {
     await execAsync('nvidia-smi --query-gpu=name --format=csv,noheader', { timeout: 5000 })
     return true
-  } catch {}
+  } catch {
+    // nvidia-smi is absent on most non-NVIDIA systems.
+  }
 
   // Fallback: wmic is slower, but still useful on Windows if nvidia-smi is absent.
   try {
@@ -84,7 +90,9 @@ export async function detectNvidiaGpu(): Promise<boolean> {
       timeout: 5000
     })
     return /nvidia/i.test(stdout)
-  } catch {}
+  } catch {
+    // Treat an unavailable WMI query as no NVIDIA GPU detected.
+  }
 
   return false
 }
@@ -149,7 +157,9 @@ function getBinEntriesRecursive(rootDir: string): string[] {
           visit(fullPath, depth + 1)
         }
       }
-    } catch {}
+    } catch {
+      // Ignore unreadable nested directories while scanning extracted binaries.
+    }
   }
 
   visit(rootDir, 0)
@@ -183,7 +193,9 @@ export function isGpuEnabled(): boolean {
   if (isBinaryDownloaded()) {
     try {
       writeBinaryMarker(false, isCudaBinaryDownloaded() ? 'gpu' : 'cpu')
-    } catch {}
+    } catch {
+      // Best-effort migration for older installs; detection can proceed without the marker.
+    }
   }
 
   return false
@@ -205,7 +217,8 @@ async function downloadZip(
     signal
   })
 
-  const total = parseInt(response.headers['content-length'] || '0', 10)
+  const contentLength = response.headers['content-length']
+  const total = parseInt(typeof contentLength === 'string' ? contentLength : '0', 10)
   let downloaded = 0
   const range = progressEnd - progressStart
 
