@@ -207,8 +207,13 @@ export class ArtifactStore {
       releaseReferences
     }
     this.previews.set(preview.token, preview)
-    const { releaseReferences: _releaseReferences, ...publicPreview } = preview
-    return publicPreview
+    return {
+      token: preview.token,
+      revision: preview.revision,
+      artifactIds: [...preview.artifactIds],
+      artifactCount: preview.artifactCount,
+      sizeBytes: preview.sizeBytes
+    }
   }
 
   executeCleanup(token: string): { deletedIds: string[]; failedIds: string[] } {
