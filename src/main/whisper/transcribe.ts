@@ -15,11 +15,11 @@ import { cpus } from 'os'
 import axios from 'axios'
 import { app } from 'electron'
 import {
-  getWhisperExe,
+  getCpuWhisperExe,
+  getCudaWhisperExe,
   isBinaryDownloaded,
   downloadBinary,
-  isGpuEnabled,
-  isCudaBinaryDownloaded
+  isGpuEnabled
 } from './binary'
 import { getModelPath, getModelUrl, isModelDownloaded, getModelDir, WHISPER_MODELS } from './models'
 import { getFfmpegPath, probeFile, sumDurations } from '../ffmpeg/probe'
@@ -40,7 +40,8 @@ import {
 import { shouldPreferCueCandidate } from './candidateSelection'
 import type { WhisperModel, WhisperProgressEvent } from '../../shared/types'
 import type { AudioSegment, SubtitleCue } from './segments'
-import { isMissingWindowsDependencyExitCode } from '../../shared/whisperExitCodes'
+import { classifyCudaFailure } from '../../shared/computeFallback'
+import { loadSettings } from '../ipc/settings.ipc'
 
 let activeProcess: ChildProcess | null = null
 let activeAbortController: AbortController | null = null
@@ -282,8 +283,10 @@ export async function transcribeAudio(
 
     if (signal.aborted) throw new Error('Cancelled')
 
-    let gpuEnabled = isGpuEnabled()
-    let binaryLooksCudaLinked = isCudaBinaryDownloaded()
+    let gpuEnabled =
+      loadSettings().computePreference !== 'cpu' &&
+      isGpuEnabled() &&
+      getCudaWhisperExe() !== null
     const inputDuration = await sumDurations(audioPaths)
 
     if (inputDuration <= 0) {
@@ -312,25 +315,29 @@ export async function transcribeAudio(
     }
 
     const ffmpeg = getFfmpegPath()
-    let whisperExe = getWhisperExe()!
+    let selectedWhisperExe = gpuEnabled ? getCudaWhisperExe() : getCpuWhisperExe()
     const modelPath = getModelPath(model)
     const threads = getThreadCount()
 
-    if (binaryLooksCudaLinked && !gpuEnabled) {
+    if (!selectedWhisperExe) {
       onProgress({ phase: 'downloading-binary', percent: 0 })
       await downloadBinary(reportBinaryDownloadProgress, signal, {
         forceCpu: true,
-        replaceExisting: true
+        activate: false
       })
 
       if (signal.aborted) {
         throw new Error('Cancelled')
       }
 
-      whisperExe = getWhisperExe()!
+      selectedWhisperExe = getCpuWhisperExe()
       gpuEnabled = false
-      binaryLooksCudaLinked = false
     }
+
+    if (!selectedWhisperExe) {
+      throw new Error('A usable Whisper CPU or CUDA executable is not installed.')
+    }
+    let whisperExe: string = selectedWhisperExe
 
     onProgress({ phase: 'preparing', percent: 0 })
 
@@ -615,25 +622,26 @@ export async function transcribeAudio(
       try {
         await runWhisperWindow(gpuEnabled)
       } catch (error) {
-        const shouldFallbackToCpu =
-          error instanceof WhisperSegmentProcessError &&
-          isMissingWindowsDependencyExitCode(error.exitCode)
+        const fallbackReason =
+          gpuEnabled && error instanceof WhisperSegmentProcessError
+            ? classifyCudaFailure(error.exitCode, error.stderr)
+            : null
 
-        if (!shouldFallbackToCpu) {
+        if (!fallbackReason) {
           throw error
         }
 
         onProgress({ phase: 'downloading-binary', percent: 0 })
         await downloadBinary(reportBinaryDownloadProgress, signal, {
           forceCpu: true,
-          replaceExisting: true
+          activate: false
         })
 
         if (signal.aborted) {
           throw new Error('Cancelled')
         }
 
-        const cpuWhisperExe = getWhisperExe()
+        const cpuWhisperExe = getCpuWhisperExe()
         if (!cpuWhisperExe) {
           throw new Error(
             'Whisper could not start with the GPU binary, and the CPU fallback binary could not be installed.'
@@ -641,10 +649,16 @@ export async function transcribeAudio(
         }
 
         gpuEnabled = false
-        binaryLooksCudaLinked = false
         whisperExe = cpuWhisperExe
 
         await unlink(`${srtBasePath}.srt`).catch(() => {})
+        onProgress({
+          phase: 'transcribing',
+          percent: Math.min(Math.round((startSec / totalDuration) * 100), 99),
+          segmentIndex: progressSegment.index,
+          segmentCount: segments.length,
+          liveText: `CUDA ${fallbackReason}; retrying this segment on CPU`
+        })
         await runWhisperWindow(false)
       }
 

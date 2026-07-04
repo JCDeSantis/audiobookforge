@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from 'react'
-import type { WhisperModel, WhisperStorageInfo } from '../../../shared/types'
+import type {
+  ComputePreference,
+  WhisperModel,
+  WhisperStorageInfo
+} from '../../../shared/types'
 import { validateAbsUrl } from '../../../shared/urlSafety'
 import { getAppClient } from '../lib/appClient'
 import { WHISPER_MODELS } from '../lib/whisperModels'
@@ -15,6 +19,9 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
   const [username, setUsername] = useState(settings.absUsername ?? '')
   const [password, setPassword] = useState('')
   const [defaultModel, setDefaultModel] = useState<WhisperModel>(settings.defaultModel)
+  const [computePreference, setComputePreference] = useState<ComputePreference>(
+    settings.computePreference ?? 'automatic'
+  )
   const [signingIn, setSigningIn] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [loginResult, setLoginResult] = useState<string | null>(null)
@@ -155,7 +162,8 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
         ...settings,
         absUrl: validation.normalizedUrl,
         absUsername: result.username,
-        defaultModel
+        defaultModel,
+        computePreference
       })
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Audiobookshelf login failed.')
@@ -192,7 +200,13 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     try {
       await getAppClient().settings.setUrl(validation.normalizedUrl)
       await getAppClient().settings.setDefaultModel(defaultModel)
-      setSettings({ ...settings, absUrl: validation.normalizedUrl, defaultModel })
+      await getAppClient().settings.setComputePreference(computePreference)
+      setSettings({
+        ...settings,
+        absUrl: validation.normalizedUrl,
+        defaultModel,
+        computePreference
+      })
       onClose()
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Failed to save settings.')
@@ -338,6 +352,20 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
                   {model.name} ({model.size})
                 </option>
               ))}
+            </select>
+          </label>
+
+          <label className="grid gap-2">
+            <span className="text-sm font-medium text-[#f6e2e2]">Compute Backend</span>
+            <select
+              className="h-10 rounded-[14px] border border-[#482020] bg-[#170909] px-3 text-sm text-[#fff4f4] outline-none transition-colors focus:border-[#dc2626]"
+              onChange={(event) =>
+                setComputePreference(event.target.value as ComputePreference)
+              }
+              value={computePreference}
+            >
+              <option value="automatic">Automatic (CUDA with CPU fallback)</option>
+              <option value="cpu">Force CPU</option>
             </select>
           </label>
 

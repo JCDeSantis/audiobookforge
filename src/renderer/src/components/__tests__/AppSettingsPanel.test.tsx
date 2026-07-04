@@ -62,7 +62,7 @@ describe('App settings flow', () => {
     fireEvent.change(within(dialog).getByPlaceholderText('Audiobookshelf password'), {
       target: { value: 'secret-password' }
     })
-    fireEvent.change(within(dialog).getByRole('combobox'), {
+    fireEvent.change(within(dialog).getByRole('combobox', { name: 'Default Whisper Model' }), {
       target: { value: 'medium' }
     })
 

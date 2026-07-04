@@ -9,7 +9,9 @@ const electron = {
   settings: {
     get: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
     setUrl: (url: string) => ipcRenderer.invoke(IPC.SETTINGS_SET_URL, url),
-    setDefaultModel: (model: string) => ipcRenderer.invoke(IPC.SETTINGS_SET_DEFAULT_MODEL, model)
+    setDefaultModel: (model: string) => ipcRenderer.invoke(IPC.SETTINGS_SET_DEFAULT_MODEL, model),
+    setComputePreference: (preference: string) =>
+      ipcRenderer.invoke(IPC.SETTINGS_SET_COMPUTE_PREFERENCE, preference)
   },
 
   files: {

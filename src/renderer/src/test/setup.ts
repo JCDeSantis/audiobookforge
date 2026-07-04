@@ -17,10 +17,12 @@ const defaultElectronMock = {
     get: async () => ({
       absUrl: '',
       absUsername: '',
-      defaultModel: 'large-v3-turbo-q5_0' as const
+      defaultModel: 'large-v3-turbo-q5_0' as const,
+      computePreference: 'automatic' as const
     }),
     setUrl: async () => undefined,
-    setDefaultModel: async () => undefined
+    setDefaultModel: async () => undefined,
+    setComputePreference: async () => undefined
   },
   files: {
     pickAudio: async () => null,

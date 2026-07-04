@@ -31,14 +31,20 @@ type BinaryMarker = {
 type DownloadBinaryOptions = {
   forceCpu?: boolean
   replaceExisting?: boolean
+  activate?: boolean
 }
+
+type BinaryFlavor = 'cpu' | 'gpu'
 
 export function getBinDir(): string {
   return join(app.getPath('userData'), 'whisper', 'bin')
 }
 
-export function getWhisperExe(): string | null {
-  const binDir = getBinDir()
+export function getBinaryFlavorDir(flavor: BinaryFlavor): string {
+  return join(getBinDir(), flavor)
+}
+
+function findWhisperExe(binDir: string): string | null {
   if (!existsSync(binDir)) return null
 
   // Scan binDir and two levels deep to find the executable regardless of zip layout.
@@ -71,8 +77,35 @@ export function getWhisperExe(): string | null {
   return null
 }
 
+function getLegacyWhisperExe(): string | null {
+  const legacyExe = findWhisperExe(getBinDir())
+  if (!legacyExe) return null
+  const relativePath = legacyExe.slice(getBinDir().length).replace(/^[/\\]/, '')
+  if (relativePath.startsWith('cpu\\') || relativePath.startsWith('cpu/')) return null
+  if (relativePath.startsWith('gpu\\') || relativePath.startsWith('gpu/')) return null
+  return legacyExe
+}
+
+export function getCpuWhisperExe(): string | null {
+  const installed = findWhisperExe(getBinaryFlavorDir('cpu'))
+  if (installed) return installed
+  return isCudaBinaryDownloaded() ? null : getLegacyWhisperExe()
+}
+
+export function getCudaWhisperExe(): string | null {
+  const installed = findWhisperExe(getBinaryFlavorDir('gpu'))
+  if (installed) return installed
+  return isCudaBinaryDownloaded() ? getLegacyWhisperExe() : null
+}
+
+export function getWhisperExe(): string | null {
+  return isGpuEnabled()
+    ? (getCudaWhisperExe() ?? getCpuWhisperExe())
+    : (getCpuWhisperExe() ?? getCudaWhisperExe())
+}
+
 export function isBinaryDownloaded(): boolean {
-  return getWhisperExe() !== null
+  return getCpuWhisperExe() !== null || getCudaWhisperExe() !== null
 }
 
 export async function detectNvidiaGpu(): Promise<boolean> {
@@ -167,10 +200,7 @@ function getBinEntriesRecursive(rootDir: string): string[] {
 }
 
 export function isCudaBinaryDownloaded(): boolean {
-  const marker = readBinaryMarker()
-  if (marker?.flavor) {
-    return marker.flavor === 'gpu'
-  }
+  if (findWhisperExe(getBinaryFlavorDir('gpu'))) return true
 
   const binDir = getBinDir()
   if (!existsSync(binDir)) {
@@ -271,8 +301,13 @@ export async function downloadBinary(
   signal?: AbortSignal,
   options: DownloadBinaryOptions = {}
 ): Promise<void> {
-  const { forceCpu = false, replaceExisting = false } = options
-  const binDir = getBinDir()
+  const { forceCpu = false, replaceExisting = false, activate = true } = options
+  const [hasGpu, cudaUrl] = forceCpu
+    ? [false, null]
+    : await Promise.all([detectNvidiaGpu(), getCudaAssetUrl()])
+  const useGpu = hasGpu && cudaUrl !== null
+  const flavor: BinaryFlavor = useGpu ? 'gpu' : 'cpu'
+  const binDir = getBinaryFlavorDir(flavor)
 
   if (replaceExisting && existsSync(binDir)) {
     rmSync(binDir, { recursive: true, force: true })
@@ -283,13 +318,9 @@ export async function downloadBinary(
   const zipPath = join(binDir, 'whisper-bin.zip')
 
   onProgress(0, 'Checking system...')
-  const [hasGpu, cudaUrl] = forceCpu
-    ? [false, null]
-    : await Promise.all([detectNvidiaGpu(), getCudaAssetUrl()])
 
   if (signal?.aborted) throw new Error('Cancelled')
 
-  const useGpu = hasGpu && cudaUrl !== null
   const downloadUrl = useGpu ? cudaUrl : CPU_BINARY_URL
   const label = useGpu ? 'Downloading whisper.cpp (GPU)...' : 'Downloading whisper.cpp...'
 
@@ -304,10 +335,12 @@ export async function downloadBinary(
   await execAsync(`tar -xf "${zipPath}" -C "${binDir}"`)
   await unlink(zipPath).catch(() => {})
 
-  if (!getWhisperExe()) {
+  if (!findWhisperExe(binDir)) {
     throw new Error('Whisper binary extraction completed, but no executable was found.')
   }
 
-  writeBinaryMarker(useGpu, useGpu ? 'gpu' : 'cpu')
+  if (activate) {
+    writeBinaryMarker(useGpu, flavor)
+  }
   onProgress(100, useGpu ? 'GPU-accelerated binary ready' : 'Binary ready')
 }

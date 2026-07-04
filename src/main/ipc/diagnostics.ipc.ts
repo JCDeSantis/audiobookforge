@@ -65,7 +65,8 @@ export function registerDiagnosticsIpc(): void {
       settings: {
         absUrlConfigured: settings.absUrl.length > 0,
         absUrlOrigin: safeOrigin(settings.absUrl),
-        defaultModel: settings.defaultModel
+        defaultModel: settings.defaultModel,
+        computePreference: settings.computePreference ?? 'automatic'
       },
       whisper: {
         version: WHISPER_VERSION,

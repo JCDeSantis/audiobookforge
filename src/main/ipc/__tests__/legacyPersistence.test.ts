@@ -49,7 +49,8 @@ describe('v1.1 persistence baseline', () => {
     expect(loadSettings()).toEqual({
       absUrl: 'https://abs.example.com',
       absUsername: 'jacob',
-      defaultModel: 'large-v3-turbo-q5_0'
+      defaultModel: 'large-v3-turbo-q5_0',
+      computePreference: 'automatic'
     })
   })
 
@@ -90,7 +91,8 @@ describe('v1.1 persistence baseline', () => {
     expect(loadSettings()).toEqual({
       absUrl: '',
       absUsername: '',
-      defaultModel: 'large-v3-turbo-q5_0'
+      defaultModel: 'large-v3-turbo-q5_0',
+      computePreference: 'automatic'
     })
   })
 

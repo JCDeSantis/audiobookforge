@@ -177,6 +177,7 @@ export interface AppSettings {
   absUrl: string
   absUsername?: string
   defaultModel: WhisperModel
+  computePreference?: ComputePreference
 }
 
 export interface RuntimeCapabilities {
@@ -248,5 +249,6 @@ export const IPC = {
   // Settings
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET_URL: 'settings:set-url',
-  SETTINGS_SET_DEFAULT_MODEL: 'settings:set-default-model'
+  SETTINGS_SET_DEFAULT_MODEL: 'settings:set-default-model',
+  SETTINGS_SET_COMPUTE_PREFERENCE: 'settings:set-compute-preference'
 } as const

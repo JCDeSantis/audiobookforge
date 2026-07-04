@@ -4,7 +4,7 @@ import keytar from 'keytar'
 import { WHISPER_MODELS } from '../whisper/models'
 import { IPC } from '../../shared/types'
 import { validateAbsUrl } from '../../shared/urlSafety'
-import type { AppSettings, WhisperModel } from '../../shared/types'
+import type { AppSettings, ComputePreference, WhisperModel } from '../../shared/types'
 import { readVersionedJson, writeVersionedJson } from '../../core/persistence/atomicJsonStore'
 import { getDesktopDataPaths } from '../platform/desktopDataPaths'
 
@@ -14,6 +14,7 @@ const SESSION_ACCOUNT = 'abs-session'
 const DEFAULT_MODEL: WhisperModel = 'large-v3-turbo-q5_0'
 const SETTINGS_SCHEMA_VERSION = 1
 const VALID_MODELS = new Set<WhisperModel>(WHISPER_MODELS.map((model) => model.id))
+const VALID_COMPUTE_PREFERENCES = new Set<ComputePreference>(['automatic', 'cpu'])
 
 function getSettingsPath(): string {
   return getDesktopDataPaths().settingsFile
@@ -35,7 +36,12 @@ function normalizeSettings(value: unknown): AppSettings {
   return {
     absUrl: validatedUrl && validatedUrl.ok ? validatedUrl.normalizedUrl : '',
     absUsername: typeof parsed.absUsername === 'string' ? parsed.absUsername : '',
-    defaultModel: getDefaultModel(parsed.defaultModel)
+    defaultModel: getDefaultModel(parsed.defaultModel),
+    computePreference:
+      typeof parsed.computePreference === 'string' &&
+      VALID_COMPUTE_PREFERENCES.has(parsed.computePreference as ComputePreference)
+        ? (parsed.computePreference as ComputePreference)
+        : 'automatic'
   }
 }
 
@@ -46,14 +52,22 @@ function isAppSettings(value: unknown): value is AppSettings {
     typeof settings.absUrl === 'string' &&
     (settings.absUsername === undefined || typeof settings.absUsername === 'string') &&
     typeof settings.defaultModel === 'string' &&
-    VALID_MODELS.has(settings.defaultModel as WhisperModel)
+    VALID_MODELS.has(settings.defaultModel as WhisperModel) &&
+    (settings.computePreference === undefined ||
+      (typeof settings.computePreference === 'string' &&
+        VALID_COMPUTE_PREFERENCES.has(settings.computePreference as ComputePreference)))
   )
 }
 
 export function loadSettings(): AppSettings {
   const settingsPath = getSettingsPath()
   if (!existsSync(settingsPath)) {
-    return { absUrl: '', absUsername: '', defaultModel: DEFAULT_MODEL }
+    return {
+      absUrl: '',
+      absUsername: '',
+      defaultModel: DEFAULT_MODEL,
+      computePreference: 'automatic'
+    }
   }
 
   return readVersionedJson({
@@ -138,4 +152,16 @@ export function registerSettingsIpc(): void {
     settings.defaultModel = model
     saveSettings(settings)
   })
+
+  ipcMain.handle(
+    IPC.SETTINGS_SET_COMPUTE_PREFERENCE,
+    (_event, preference: ComputePreference) => {
+      if (!VALID_COMPUTE_PREFERENCES.has(preference)) {
+        throw new Error('Unsupported compute preference.')
+      }
+      const settings = loadSettings()
+      settings.computePreference = preference
+      saveSettings(settings)
+    }
+  )
 }

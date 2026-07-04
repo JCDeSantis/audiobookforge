@@ -6,7 +6,7 @@ import type {
   WhisperProgressEvent,
   WhisperStorageInfo
 } from '../../../shared/types'
-import type { AbsLoginResult, RuntimeCapabilities } from '../../../shared/types'
+import type { AbsLoginResult, ComputePreference, RuntimeCapabilities } from '../../../shared/types'
 
 export interface AppClient {
   runtime: {
@@ -16,6 +16,7 @@ export interface AppClient {
     get: () => Promise<AppSettings>
     setUrl: (url: string) => Promise<void>
     setDefaultModel: (model: AppSettings['defaultModel']) => Promise<void>
+    setComputePreference: (preference: ComputePreference) => Promise<void>
   }
   files: {
     pickAudio: () => Promise<string[] | null>
