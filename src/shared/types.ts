@@ -153,6 +153,7 @@ export interface AbsBook {
   cover: string | null // cover URL relative to ABS server
   hasSubtitles: boolean
   ebookPath: string | null // absolute path if same-machine ABS
+  ebookDownloadUrl?: string | null // authenticated portable download URL when ABS exposes a file id
   audioFiles: AbsAudioFile[]
 }
 
@@ -168,6 +169,7 @@ export interface AbsBookSummary {
   cover: string | null
   hasSubtitles: boolean
   ebookPath: string | null
+  ebookDownloadUrl?: string | null
   audioFiles: AbsAudioFile[]
 }
 
@@ -216,6 +218,7 @@ export interface AbsLoginResult {
   username: string
   userType: string
   serverVersion: string
+  connectionWarning?: string
 }
 
 // ─── IPC channels ────────────────────────────────────────────────────────────

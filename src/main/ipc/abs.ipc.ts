@@ -72,7 +72,7 @@ interface AbsApiItem {
     duration?: number
     coverPath?: string
     audioFiles?: AbsApiAudioFile[]
-    ebookFile?: { metadata?: { path?: string } } | null
+    ebookFile?: { ino?: string; metadata?: { path?: string } } | null
     tracks?: AbsApiTrack[]
   }
 }
@@ -91,11 +91,6 @@ function authHeaders(apiKey: string): Record<string, string> {
   return { Authorization: `Bearer ${apiKey}` }
 }
 
-function isLoopbackUrl(url: string): boolean {
-  const hostname = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, '')
-  return hostname === 'localhost' || hostname === '::1' || /^127(?:\.\d{1,3}){3}$/.test(hostname)
-}
-
 export async function loginToAbs(
   baseUrlInput: string,
   usernameInput: string,
@@ -110,12 +105,6 @@ export async function loginToAbs(
   }
   const validation = validateAbsUrl(baseUrlInput)
   if (!validation.ok) throw new Error(validation.error)
-  if (
-    new URL(validation.normalizedUrl).protocol !== 'https:' &&
-    !isLoopbackUrl(validation.normalizedUrl)
-  ) {
-    throw new Error('Audiobookshelf sign-in requires HTTPS unless the server is on this computer.')
-  }
   const username = usernameInput.trim()
   if (!username) throw new Error('Enter your Audiobookshelf username.')
   if (username.length > 200 || password.length > 1024) {
@@ -162,7 +151,13 @@ export async function loginToAbs(
   return {
     username: user.username,
     userType: user.type ?? 'user',
-    serverVersion: response.data.serverSettings?.version ?? 'unknown'
+    serverVersion: response.data.serverSettings?.version ?? 'unknown',
+    ...(new URL(validation.normalizedUrl).protocol === 'http:'
+      ? {
+          connectionWarning:
+            'This private-network Audiobookshelf connection uses HTTP. Credentials and tokens are not encrypted in transit.'
+        }
+      : {})
   }
 }
 
@@ -276,6 +271,9 @@ export function mapAbsItemToBook(item: AbsApiItem, baseUrl: string): AbsBook {
   const hasSubtitles = (item.libraryFiles ?? []).some(isSubtitleFile)
   const coverPath = media.coverPath ? `${baseUrl}/api/items/${item.id}/cover` : null
   const ebookPath = media.ebookFile?.metadata?.path ?? null
+  const ebookDownloadUrl = media.ebookFile?.ino
+    ? `${baseUrl}/api/items/${item.id}/file/${media.ebookFile.ino}/download`
+    : null
 
   return {
     id: item.id,
@@ -289,6 +287,7 @@ export function mapAbsItemToBook(item: AbsApiItem, baseUrl: string): AbsBook {
     cover: coverPath,
     hasSubtitles,
     ebookPath,
+    ebookDownloadUrl,
     audioFiles
   }
 }

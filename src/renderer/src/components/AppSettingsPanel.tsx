@@ -157,7 +157,11 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
       if (!validation.ok) return
       setUsername(result.username)
       setPassword('')
-      setLoginResult(`Signed in as ${result.username} on Audiobookshelf ${result.serverVersion}.`)
+      setLoginResult(
+        `Signed in as ${result.username} on Audiobookshelf ${result.serverVersion}.${
+          result.connectionWarning ? ` ${result.connectionWarning}` : ''
+        }`
+      )
       setSettings({
         ...settings,
         absUrl: validation.normalizedUrl,
@@ -268,7 +272,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
                 value={url}
               />
               <span className="text-xs leading-5 text-[#a87f7f]">
-                Sign-in requires HTTPS unless Audiobookshelf is running on this computer.
+                Public servers require HTTPS. Private-network HTTP is allowed with a security warning.
               </span>
             </label>
 
