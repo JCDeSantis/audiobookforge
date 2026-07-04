@@ -3,6 +3,16 @@ import { cleanup } from '@testing-library/react'
 import { afterEach } from 'vitest'
 
 const defaultElectronMock = {
+  runtime: {
+    getCapabilities: async () => ({
+      runtime: 'windows-desktop' as const,
+      nativeFilePicker: true,
+      browserUploads: false,
+      nativeOutputFolder: true,
+      resultDownloads: false,
+      singleUser: true as const
+    })
+  },
   settings: {
     get: async () => ({
       absUrl: '',

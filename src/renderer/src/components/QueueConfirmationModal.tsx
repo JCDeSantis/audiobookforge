@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { getAppClient } from '../lib/appClient'
 import { buildConfirmationRows, buildQueueJobPayloads } from '../lib/jobDraft'
 import { useAppStore } from '../store/useAppStore'
 
@@ -35,7 +36,7 @@ export function QueueConfirmationModal(): React.JSX.Element {
       setSubmitError(null)
 
       for (const payload of buildQueueJobPayloads(wizard, settings)) {
-        await window.electron.queue.add(payload)
+        await getAppClient().queue.add(payload)
         queuedCount += 1
       }
 

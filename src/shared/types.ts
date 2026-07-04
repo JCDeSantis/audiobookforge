@@ -179,6 +179,25 @@ export interface AppSettings {
   defaultModel: WhisperModel
 }
 
+export interface RuntimeCapabilities {
+  runtime: 'windows-desktop' | 'docker-web'
+  nativeFilePicker: boolean
+  browserUploads: boolean
+  nativeOutputFolder: boolean
+  resultDownloads: boolean
+  singleUser: true
+}
+
+export type ComputePreference = 'automatic' | 'cpu'
+export type ComputeBackend = 'cuda' | 'cpu' | 'unknown'
+
+export interface ComputeStatus {
+  preference: ComputePreference
+  detectedBackend: ComputeBackend
+  activeBackend: ComputeBackend
+  fallbackReason: string | null
+}
+
 export interface AbsLoginResult {
   username: string
   userType: string
@@ -188,6 +207,9 @@ export interface AbsLoginResult {
 // ─── IPC channels ────────────────────────────────────────────────────────────
 
 export const IPC = {
+  // Runtime
+  RUNTIME_CAPABILITIES: 'runtime:capabilities',
+
   // Whisper
   WHISPER_PROGRESS: 'whisper:progress',
   WHISPER_CANCEL: 'whisper:cancel',

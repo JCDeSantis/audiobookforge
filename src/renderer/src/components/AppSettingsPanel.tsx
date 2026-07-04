@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import type { WhisperModel, WhisperStorageInfo } from '../../../shared/types'
 import { validateAbsUrl } from '../../../shared/urlSafety'
+import { getAppClient } from '../lib/appClient'
 import { WHISPER_MODELS } from '../lib/whisperModels'
 import { useAppStore } from '../store/useAppStore'
 
@@ -33,7 +34,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
 
     const loadStorageInfo = async (): Promise<void> => {
       try {
-        const info = await window.electron.whisper.getStorageInfo()
+        const info = await getAppClient().whisper.getStorageInfo()
         if (!isActive) {
           return
         }
@@ -80,8 +81,8 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     setClearResult(null)
 
     try {
-      await window.electron.whisper.clearModels()
-      const updatedInfo = await window.electron.whisper.getStorageInfo()
+      await getAppClient().whisper.clearModels()
+      const updatedInfo = await getAppClient().whisper.getStorageInfo()
       setStorageInfo(updatedInfo)
       setClearResult('Downloaded Whisper models cleared.')
     } catch (error) {
@@ -94,7 +95,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
   }
 
   const refreshStorageInfo = async (): Promise<void> => {
-    const updatedInfo = await window.electron.whisper.getStorageInfo()
+    const updatedInfo = await getAppClient().whisper.getStorageInfo()
     setStorageInfo(updatedInfo)
   }
 
@@ -104,7 +105,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     setClearResult(null)
 
     try {
-      await window.electron.whisper.deleteModel(model)
+      await getAppClient().whisper.deleteModel(model)
       await refreshStorageInfo()
       setClearResult('Whisper model removed.')
     } catch (error) {
@@ -120,7 +121,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     setDiagnosticsError(null)
 
     try {
-      const exportedPath = await window.electron.diagnostics.export()
+      const exportedPath = await getAppClient().diagnostics.export()
       if (exportedPath) {
         setDiagnosticsResult(`Diagnostics exported to ${exportedPath}`)
       }
@@ -144,7 +145,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     setFormError(null)
     setLoginResult(null)
     try {
-      const result = await window.electron.abs.login(url, username, password)
+      const result = await getAppClient().abs.login(url, username, password)
       const validation = validateAbsUrl(url)
       if (!validation.ok) return
       setUsername(result.username)
@@ -167,7 +168,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     setSigningOut(true)
     setFormError(null)
     try {
-      await window.electron.abs.logout()
+      await getAppClient().abs.logout()
       setUsername('')
       setPassword('')
       setLoginResult('Signed out of Audiobookshelf.')
@@ -189,8 +190,8 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     setSaving(true)
     setFormError(null)
     try {
-      await window.electron.settings.setUrl(validation.normalizedUrl)
-      await window.electron.settings.setDefaultModel(defaultModel)
+      await getAppClient().settings.setUrl(validation.normalizedUrl)
+      await getAppClient().settings.setDefaultModel(defaultModel)
       setSettings({ ...settings, absUrl: validation.normalizedUrl, defaultModel })
       onClose()
     } catch (error) {

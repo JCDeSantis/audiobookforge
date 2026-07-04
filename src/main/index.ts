@@ -7,6 +7,7 @@ import { registerAbsIpc } from './ipc/abs.ipc'
 import { registerQueueIpc, setQueueWindow } from './ipc/queue.ipc'
 import { registerWhisperIpc } from './ipc/whisper.ipc'
 import { registerDiagnosticsIpc } from './ipc/diagnostics.ipc'
+import { registerRuntimeIpc } from './ipc/runtime.ipc'
 import { isSafeExternalUrl } from '../shared/urlSafety'
 
 function getWindowIconPath(): string {
@@ -110,6 +111,7 @@ app.whenReady().then(() => {
   }
 
   registerSettingsIpc()
+  registerRuntimeIpc()
   registerFilesIpc()
   registerAbsIpc()
   registerQueueIpc()

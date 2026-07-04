@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import type { TranscriptionJob } from '../../../shared/types'
+import { getAppClient } from '../lib/appClient'
 import { getWhisperModelBaseName } from '../lib/whisperModels'
 import { WHISPER_MODELS } from '../lib/whisperModels'
 import { useAppStore } from '../store/useAppStore'
@@ -119,28 +120,28 @@ function JobCard({
         : 'Waiting in queue'
 
   const handleCancel = (): void => {
-    window.electron.queue.cancel(job.id)
+    getAppClient().queue.cancel(job.id)
   }
 
   const handlePause = (): void => {
-    window.electron.queue.pause(job.id)
+    getAppClient().queue.pause(job.id)
   }
 
   const handleResume = (): void => {
-    window.electron.queue.resume(job.id)
+    getAppClient().queue.resume(job.id)
   }
 
   const handleRetry = async (): Promise<void> => {
-    await window.electron.queue.retry(job.id, retryModel)
+    await getAppClient().queue.retry(job.id, retryModel)
   }
 
   const handleRemove = (): void => {
-    window.electron.queue.remove(job.id)
+    getAppClient().queue.remove(job.id)
   }
 
   const handleRevealSaved = (): void => {
     if (savedPaths.length > 0) {
-      window.electron.files.showInExplorer(savedPaths[0])
+      getAppClient().files.showInExplorer(savedPaths[0])
     }
   }
 
@@ -353,7 +354,7 @@ export function QueuePanel(): React.JSX.Element {
   }, [activeJobs.length])
 
   const handleClearDone = (): void => {
-    window.electron.queue.clearDone()
+    getAppClient().queue.clearDone()
   }
 
   const moveJob = (jobId: string, direction: -1 | 1): void => {
@@ -366,7 +367,7 @@ export function QueuePanel(): React.JSX.Element {
 
     const [moved] = ordered.splice(index, 1)
     ordered.splice(nextIndex, 0, moved)
-    window.electron.queue.reorder(ordered)
+    getAppClient().queue.reorder(ordered)
   }
 
   return (

@@ -6,9 +6,12 @@ import type {
   WhisperProgressEvent,
   WhisperStorageInfo
 } from '../../../shared/types'
-import type { AbsLoginResult } from '../../../shared/types'
+import type { AbsLoginResult, RuntimeCapabilities } from '../../../shared/types'
 
-export interface ElectronAPI {
+export interface AppClient {
+  runtime: {
+    getCapabilities: () => Promise<RuntimeCapabilities>
+  }
   settings: {
     get: () => Promise<AppSettings>
     setUrl: (url: string) => Promise<void>
@@ -51,8 +54,10 @@ export interface ElectronAPI {
   }
 }
 
+export type ElectronAPI = AppClient
+
 declare global {
   interface Window {
-    electron: ElectronAPI
+    electron: AppClient
   }
 }

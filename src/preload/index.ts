@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/types'
 
 const electron = {
+  runtime: {
+    getCapabilities: () => ipcRenderer.invoke(IPC.RUNTIME_CAPABILITIES)
+  },
+
   settings: {
     get: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
     setUrl: (url: string) => ipcRenderer.invoke(IPC.SETTINGS_SET_URL, url),

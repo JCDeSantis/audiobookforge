@@ -1,4 +1,5 @@
 import React from 'react'
+import { getAppClient } from '../lib/appClient'
 import { getLocalSourceTitle } from '../lib/sourceTitle'
 import { useAppStore } from '../store/useAppStore'
 
@@ -30,7 +31,7 @@ export function SourceSelector(): React.JSX.Element {
       : 'Local audiobook files'
 
   const handleBrowseFiles = async (): Promise<void> => {
-    const paths = await window.electron.files.pickAudio()
+    const paths = await getAppClient().files.pickAudio()
     if (paths && paths.length > 0) {
       selectLocalFiles(paths)
     }
