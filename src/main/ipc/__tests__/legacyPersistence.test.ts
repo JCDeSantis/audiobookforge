@@ -28,6 +28,7 @@ vi.mock('keytar', () => ({
 
 import { loadQueue, persistQueue } from '../queue.ipc'
 import { loadSettings } from '../settings.ipc'
+import { PersistenceError } from '../../../core/persistence/atomicJsonStore'
 
 const fixturesDir = resolve('src/main/ipc/__tests__/fixtures')
 let userDataPath = ''
@@ -79,7 +80,10 @@ describe('v1.1 persistence baseline', () => {
 
     persistQueue(jobs)
 
-    expect(JSON.parse(readFileSync(join(userDataPath, 'queue.json'), 'utf-8'))).toEqual(jobs)
+    expect(JSON.parse(readFileSync(join(userDataPath, 'queue.json'), 'utf-8'))).toEqual({
+      schemaVersion: 1,
+      data: jobs
+    })
   })
 
   it('uses safe defaults when no settings file exists', () => {
@@ -90,9 +94,10 @@ describe('v1.1 persistence baseline', () => {
     })
   })
 
-  it('does not interpret a non-array legacy queue document as jobs', () => {
+  it('preserves and reports an invalid legacy queue document', () => {
     writeFileSync(join(userDataPath, 'queue.json'), '{"jobs":[]}', 'utf-8')
 
-    expect(loadQueue()).toEqual([])
+    expect(() => loadQueue()).toThrow(PersistenceError)
+    expect(readFileSync(join(userDataPath, 'queue.json'), 'utf-8')).toBe('{"jobs":[]}')
   })
 })

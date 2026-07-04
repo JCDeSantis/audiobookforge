@@ -1,20 +1,22 @@
-import { ipcMain, app } from 'electron'
-import { readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { join } from 'path'
+import { ipcMain } from 'electron'
+import { existsSync } from 'fs'
 import keytar from 'keytar'
 import { WHISPER_MODELS } from '../whisper/models'
 import { IPC } from '../../shared/types'
 import { validateAbsUrl } from '../../shared/urlSafety'
 import type { AppSettings, WhisperModel } from '../../shared/types'
+import { readVersionedJson, writeVersionedJson } from '../../core/persistence/atomicJsonStore'
+import { getDesktopDataPaths } from '../platform/desktopDataPaths'
 
 const SERVICE = 'audiobookforge'
 const LEGACY_ACCOUNT = 'abs-api-key'
 const SESSION_ACCOUNT = 'abs-session'
 const DEFAULT_MODEL: WhisperModel = 'large-v3-turbo-q5_0'
+const SETTINGS_SCHEMA_VERSION = 1
 const VALID_MODELS = new Set<WhisperModel>(WHISPER_MODELS.map((model) => model.id))
 
 function getSettingsPath(): string {
-  return join(app.getPath('userData'), 'settings.json')
+  return getDesktopDataPaths().settingsFile
 }
 
 function getDefaultModel(model: unknown): WhisperModel {
@@ -23,25 +25,47 @@ function getDefaultModel(model: unknown): WhisperModel {
     : DEFAULT_MODEL
 }
 
-export function loadSettings(): AppSettings {
-  try {
-    const raw = readFileSync(getSettingsPath(), 'utf-8')
-    const parsed = JSON.parse(raw) as Partial<AppSettings>
-    const validatedUrl = typeof parsed.absUrl === 'string' ? validateAbsUrl(parsed.absUrl) : null
+function normalizeSettings(value: unknown): AppSettings {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Settings must be an object.')
+  }
 
-    return {
-      absUrl: validatedUrl && validatedUrl.ok ? validatedUrl.normalizedUrl : '',
-      absUsername: typeof parsed.absUsername === 'string' ? parsed.absUsername : '',
-      defaultModel: getDefaultModel(parsed.defaultModel)
-    }
-  } catch {
-    return { absUrl: '', absUsername: '', defaultModel: DEFAULT_MODEL }
+  const parsed = value as Partial<AppSettings>
+  const validatedUrl = typeof parsed.absUrl === 'string' ? validateAbsUrl(parsed.absUrl) : null
+  return {
+    absUrl: validatedUrl && validatedUrl.ok ? validatedUrl.normalizedUrl : '',
+    absUsername: typeof parsed.absUsername === 'string' ? parsed.absUsername : '',
+    defaultModel: getDefaultModel(parsed.defaultModel)
   }
 }
 
+function isAppSettings(value: unknown): value is AppSettings {
+  if (!value || typeof value !== 'object') return false
+  const settings = value as Partial<AppSettings>
+  return (
+    typeof settings.absUrl === 'string' &&
+    (settings.absUsername === undefined || typeof settings.absUsername === 'string') &&
+    typeof settings.defaultModel === 'string' &&
+    VALID_MODELS.has(settings.defaultModel as WhisperModel)
+  )
+}
+
+export function loadSettings(): AppSettings {
+  const settingsPath = getSettingsPath()
+  if (!existsSync(settingsPath)) {
+    return { absUrl: '', absUsername: '', defaultModel: DEFAULT_MODEL }
+  }
+
+  return readVersionedJson({
+    filePath: settingsPath,
+    schemaVersion: SETTINGS_SCHEMA_VERSION,
+    validate: isAppSettings,
+    migrateLegacy: normalizeSettings
+  }).data
+}
+
 function saveSettings(settings: AppSettings): void {
-  mkdirSync(app.getPath('userData'), { recursive: true })
-  writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2), 'utf-8')
+  writeVersionedJson(getSettingsPath(), SETTINGS_SCHEMA_VERSION, settings)
 }
 
 export interface AbsSession {
