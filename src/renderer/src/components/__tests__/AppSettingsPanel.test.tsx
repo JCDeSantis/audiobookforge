@@ -20,14 +20,32 @@ describe('App settings flow', () => {
     expect(within(dialog).getByText('Default Whisper Model')).toBeInTheDocument()
   })
 
-  it('saves the ABS URL and selected default model through the settings bridge', async () => {
+  it('keeps the sign-in action inside the Audiobookshelf login section', async () => {
+    render(<App />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Settings' })
+    const loginSection = within(dialog).getByText('Audiobookshelf Login').parentElement?.parentElement
+
+    expect(loginSection).toBeTruthy()
+    expect(within(loginSection as HTMLElement).getByPlaceholderText('Audiobookshelf username')).toBeInTheDocument()
+    expect(within(loginSection as HTMLElement).getByPlaceholderText('Audiobookshelf password')).toBeInTheDocument()
+    expect(within(loginSection as HTMLElement).getByRole('button', { name: 'Sign In' })).toBeInTheDocument()
+  })
+
+  it('signs in with an ABS user and saves the selected default model', async () => {
     const setUrlMock = vi.fn().mockResolvedValue(undefined)
     const setDefaultModelMock = vi.fn().mockResolvedValue(undefined)
-    const setApiKeyMock = vi.fn().mockResolvedValue(undefined)
+    const loginMock = vi.fn().mockResolvedValue({
+      username: 'jacob',
+      userType: 'admin',
+      serverVersion: '2.29.0'
+    })
 
     window.electron.settings.setUrl = setUrlMock
     window.electron.settings.setDefaultModel = setDefaultModelMock
-    window.electron.settings.setApiKey = setApiKeyMock
+    window.electron.abs.login = loginMock
 
     render(<App />)
 
@@ -38,21 +56,28 @@ describe('App settings flow', () => {
       target: { value: 'http://abs.local' }
     })
     fireEvent.change(
-      within(dialog).getByPlaceholderText('Enter API key (leave blank to keep existing)'),
-      {
-        target: { value: 'secret-key' }
-      }
+      within(dialog).getByPlaceholderText('Audiobookshelf username'),
+      { target: { value: 'jacob' } }
     )
+    fireEvent.change(within(dialog).getByPlaceholderText('Audiobookshelf password'), {
+      target: { value: 'secret-password' }
+    })
     fireEvent.change(within(dialog).getByRole('combobox'), {
       target: { value: 'medium' }
     })
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Sign In' }))
+
+    await waitFor(() => {
+      expect(loginMock).toHaveBeenCalledWith('http://abs.local', 'jacob', 'secret-password')
+    })
+    expect(within(dialog).getByText(/Signed in as jacob/)).toBeInTheDocument()
 
     fireEvent.click(within(dialog).getByRole('button', { name: 'Save Settings' }))
 
     await waitFor(() => {
       expect(setUrlMock).toHaveBeenCalledWith('http://abs.local')
       expect(setDefaultModelMock).toHaveBeenCalledWith('medium')
-      expect(setApiKeyMock).toHaveBeenCalledWith('secret-key')
     })
   })
 

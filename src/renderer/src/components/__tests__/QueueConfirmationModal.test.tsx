@@ -140,7 +140,8 @@ describe('QueueConfirmationModal', () => {
       absFolderId: 'folder-1',
       absAuthorName: 'Pierce Brown',
       epubPath: 'C:\\Books\\Red Rising.epub',
-      model: 'large-v3-turbo'
+      model: 'large-v3-turbo',
+      subtitleFormats: ['srt']
     })
   })
 
@@ -187,7 +188,8 @@ describe('QueueConfirmationModal', () => {
       absFolderId: 'folder-1',
       absAuthorName: 'Pierce Brown',
       epubPath: 'C:\\Books\\Red Rising.epub',
-      model: 'large-v3-turbo'
+      model: 'large-v3-turbo',
+      subtitleFormats: ['srt']
     })
     expect(addMock).toHaveBeenNthCalledWith(2, {
       source: 'abs',
@@ -199,7 +201,8 @@ describe('QueueConfirmationModal', () => {
       absFolderId: 'folder-1',
       absAuthorName: 'Pierce Brown',
       epubPath: 'C:\\Books\\Shared Context.epub',
-      model: 'large-v3-turbo'
+      model: 'large-v3-turbo',
+      subtitleFormats: ['srt']
     })
   })
 

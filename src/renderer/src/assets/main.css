@@ -13,6 +13,7 @@
   --color-accent-hover: #b91c1c;
   --font-display: Constantia, Cambria, 'Palatino Linotype', Georgia, serif;
   --font-ui: 'Trebuchet MS', 'Segoe UI', sans-serif;
+  --app-header-height: 4.75rem;
   color-scheme: dark;
 }
 
@@ -35,7 +36,7 @@ body {
     linear-gradient(180deg, #080202 0%, #040101 100%);
   color: var(--color-text-primary);
   font-family: var(--font-ui);
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -69,7 +70,7 @@ button {
 .app-wordmark {
   font-family: var(--font-sans, var(--font-ui));
   margin: 0;
-  font-size: clamp(2.1rem, 3vw, 2.65rem);
+  font-size: clamp(1.65rem, 2.5vw, 2rem);
   font-weight: 700;
   line-height: 0.92;
   letter-spacing: -0.06em;
@@ -88,8 +89,8 @@ button {
 }
 
 .app-brand-icon {
-  width: 4.4rem;
-  height: 4.4rem;
+  width: 3.25rem;
+  height: 3.25rem;
   flex-shrink: 0;
   object-fit: contain;
   filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.42));
@@ -104,11 +105,45 @@ button {
 }
 
 .app-tagline {
-  margin: 0.5rem 0 0;
+  margin: 0.3rem 0 0;
   color: #ead7d2;
-  font-size: 0.86rem;
+  font-size: 0.76rem;
   line-height: 1;
   letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.stable-clamp-1,
+.stable-clamp-2 {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+}
+
+.stable-clamp-1 {
+  -webkit-line-clamp: 1;
+}
+
+.stable-clamp-2 {
+  -webkit-line-clamp: 2;
+}
+
+.stable-feedback {
+  min-height: 1.25rem;
+}
+
+.status-badge {
+  display: inline-flex;
+  height: 1.5rem;
+  min-width: 5.75rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  padding: 0 0.625rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -118,8 +153,8 @@ button {
   }
 
   .app-brand-icon {
-    width: 3.6rem;
-    height: 3.6rem;
+    width: 3rem;
+    height: 3rem;
   }
 
   .app-wordmark {
@@ -128,5 +163,11 @@ button {
 
   .app-tagline {
     font-size: 0.8rem;
+  }
+}
+
+@media (max-width: 940px) {
+  .app-tagline {
+    display: none;
   }
 }

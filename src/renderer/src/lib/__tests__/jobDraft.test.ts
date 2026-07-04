@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AbsBookSummary, WhisperModel } from '../../../../shared/types'
+import type { AbsBookSummary, SubtitleFormat, WhisperModel } from '../../../../shared/types'
 import {
   buildConfirmationRows,
   buildQueueJobData,
@@ -19,6 +19,7 @@ function createDraft(
     absItems: AbsBookSummary[]
     epubPath: string | null
     model: WhisperModel
+    subtitleFormats: SubtitleFormat[]
     outputFolder: string | null
   }> = {}
 ): JobDraft {
@@ -29,6 +30,7 @@ function createDraft(
     absItems: [] as AbsBookSummary[],
     epubPath: null as string | null,
     model: 'large-v3-turbo' as WhisperModel,
+    subtitleFormats: ['srt'] as SubtitleFormat[],
     outputFolder: null as string | null,
     ...overrides
   }
@@ -98,10 +100,7 @@ describe('jobDraft', () => {
         audioFiles: ['C:\\Audio\\part1.mp3'],
         outputFolder: 'C:\\Output'
       }),
-      [
-        createAbsItem(),
-        createAbsItem({ id: 'abs-2', title: 'Artemis', authorName: 'Andy Weir' })
-      ]
+      [createAbsItem(), createAbsItem({ id: 'abs-2', title: 'Artemis', authorName: 'Andy Weir' })]
     )
 
     expect(next.source).toBe('abs')
@@ -144,6 +143,7 @@ describe('jobDraft', () => {
 
     expect(localRows.find((row) => row.label === 'Output')?.value).toBe('C:\\Output')
     expect(localRows.find((row) => row.label === 'EPUB')?.value).toBe('book.epub')
+    expect(localRows.find((row) => row.label === 'Formats')?.value).toBe('SRT')
     expect(absRows.find((row) => row.label === 'Output')?.value).toBe('Upload to ABS automatically')
     expect(absRows.find((row) => row.label === 'EPUB')?.value).toBe('Project Hail Mary.epub')
   })
@@ -219,7 +219,8 @@ describe('jobDraft', () => {
           })
         ],
         epubPath: 'C:\\Books\\Shared Context.epub',
-        model: 'medium'
+        model: 'medium',
+        subtitleFormats: ['srt', 'vtt', 'lrc']
       }),
       {
         absUrl: 'http://abs.local',
@@ -233,7 +234,8 @@ describe('jobDraft', () => {
       title: 'Project Hail Mary',
       absItemId: 'abs-1',
       epubPath: 'C:\\Books\\Project Hail Mary.epub',
-      model: 'medium'
+      model: 'medium',
+      subtitleFormats: ['srt', 'vtt', 'lrc']
     })
     expect(payloads[1]).toMatchObject({
       source: 'abs',

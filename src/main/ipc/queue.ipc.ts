@@ -1,30 +1,37 @@
 import { ipcMain, app } from 'electron'
 import type { BrowserWindow } from 'electron'
-import {
-  readFileSync,
-  writeFileSync,
-  mkdirSync,
-  rmSync,
-  existsSync,
-  copyFileSync,
-  createWriteStream
-} from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, createWriteStream } from 'fs'
 import { join, basename, extname, isAbsolute } from 'path'
 import axios from 'axios'
 import { v4 as uuidv4 } from 'uuid'
 import Epub from 'epub2'
-import { cancelTranscription, clearTranscriptionCheckpoint, transcribeAudio } from '../whisper/transcribe'
+import {
+  cancelTranscription,
+  clearTranscriptionCheckpoint,
+  transcribeAudio
+} from '../whisper/transcribe'
 import { isBinaryDownloaded } from '../whisper/binary'
 import { isModelDownloaded, WHISPER_MODELS } from '../whisper/models'
 import { probeFile, sumDurations } from '../ffmpeg/probe'
 import { parseSrtContent, splitSrtByDurations } from '../whisper/segments'
 import { createQualityReport } from '../whisper/quality'
+import { convertSrtToFormat } from '../whisper/subtitleFormats'
 import { createJobProgressPlan, mapOverallProgressEvent } from '../../shared/jobProgress'
-import { buildAbsAudioPaths, fetchAbsBook, uploadSubtitleToAbs } from './abs.ipc'
-import { loadApiKey, loadSettings } from './settings.ipc'
+import {
+  buildAbsAudioPaths,
+  fetchAbsBook,
+  resolveAbsAccessToken,
+  uploadSubtitleToAbs
+} from './abs.ipc'
+import { loadSettings } from './settings.ipc'
 import { IPC } from '../../shared/types'
 import { isSameUrlOrigin, validateAbsUrl } from '../../shared/urlSafety'
-import type { TranscriptionJob, WhisperModel, WhisperProgressEvent } from '../../shared/types'
+import type {
+  SubtitleFormat,
+  TranscriptionJob,
+  WhisperModel,
+  WhisperProgressEvent
+} from '../../shared/types'
 
 type QueueAddPayload = Omit<
   TranscriptionJob,
@@ -41,6 +48,7 @@ type QueueAddPayload = Omit<
 >
 
 const VALID_MODELS = new Set<WhisperModel>(WHISPER_MODELS.map((model) => model.id))
+const VALID_SUBTITLE_FORMATS = new Set<SubtitleFormat>(['srt', 'vtt', 'lrc'])
 const VALID_JOB_STATUSES = new Set<TranscriptionJob['status']>([
   'queued',
   'running',
@@ -104,6 +112,21 @@ function sanitizeModel(value: unknown): WhisperModel {
   return value as WhisperModel
 }
 
+function sanitizeSubtitleFormats(value: unknown): SubtitleFormat[] {
+  if (value === undefined) return ['srt']
+  if (!Array.isArray(value)) throw new Error('Subtitle formats must be an array.')
+
+  for (const format of value) {
+    if (typeof format !== 'string' || !VALID_SUBTITLE_FORMATS.has(format as SubtitleFormat)) {
+      throw new Error('Unsupported subtitle format.')
+    }
+  }
+
+  const requested = new Set<SubtitleFormat>(value as SubtitleFormat[])
+  requested.add('srt')
+  return (['srt', 'vtt', 'lrc'] as SubtitleFormat[]).filter((format) => requested.has(format))
+}
+
 function sanitizeQueueAddPayload(jobData: unknown): QueueAddPayload {
   if (!jobData || typeof jobData !== 'object') {
     throw new Error('Invalid queue job payload.')
@@ -128,7 +151,8 @@ function sanitizeQueueAddPayload(jobData: unknown): QueueAddPayload {
       absFolderId: null,
       absAuthorName: null,
       epubPath: sanitizeOptionalAbsolutePath(candidate.epubPath),
-      model: sanitizeModel(candidate.model)
+      model: sanitizeModel(candidate.model),
+      subtitleFormats: sanitizeSubtitleFormats(candidate.subtitleFormats)
     }
   }
 
@@ -151,9 +175,12 @@ function sanitizeQueueAddPayload(jobData: unknown): QueueAddPayload {
       absItemId: candidate.absItemId.trim(),
       absLibraryId: candidate.absLibraryId.trim(),
       absFolderId: candidate.absFolderId.trim(),
-      absAuthorName: isNonEmptyString(candidate.absAuthorName) ? candidate.absAuthorName.trim() : null,
+      absAuthorName: isNonEmptyString(candidate.absAuthorName)
+        ? candidate.absAuthorName.trim()
+        : null,
       epubPath: sanitizeOptionalAbsolutePath(candidate.epubPath),
-      model: sanitizeModel(candidate.model)
+      model: sanitizeModel(candidate.model),
+      subtitleFormats: sanitizeSubtitleFormats(candidate.subtitleFormats)
     }
   }
 
@@ -178,7 +205,9 @@ function hydrateQueueJob(rawJob: Partial<TranscriptionJob>): TranscriptionJob | 
       progress: rawJob.progress ?? null,
       srtPath: sanitizeOptionalAbsolutePath(rawJob.srtPath),
       srtPaths: Array.isArray(rawJob.srtPaths)
-        ? rawJob.srtPaths.filter((path): path is string => typeof path === 'string' && isAbsolute(path))
+        ? rawJob.srtPaths.filter(
+            (path): path is string => typeof path === 'string' && isAbsolute(path)
+          )
         : [],
       qualityReport: rawJob.qualityReport ?? null,
       error: typeof rawJob.error === 'string' ? rawJob.error : null,
@@ -256,10 +285,7 @@ function sanitizeFileNamePart(value: string): string {
   const sanitized = value
     .replace(/\.(m4b|mp3|m4a|wav|flac|ogg|aac)$/i, '')
     .replace(/[<>:"/\\|?*]/g, ' ')
-    .replace(
-      /./g,
-      (char) => (char.charCodeAt(0) < 32 ? ' ' : char)
-    )
+    .replace(/./g, (char) => (char.charCodeAt(0) < 32 ? ' ' : char))
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[. ]+$/g, '')
@@ -267,32 +293,41 @@ function sanitizeFileNamePart(value: string): string {
   return sanitized || 'transcript'
 }
 
-function getJobSrtFileName(job: TranscriptionJob): string {
+function getJobSubtitleBaseName(job: TranscriptionJob): string {
   if (job.source === 'local' && job.audioFiles.length === 1) {
     const firstAudio = basename(job.audioFiles[0], extname(job.audioFiles[0]))
-    return `${sanitizeFileNamePart(firstAudio)}.srt`
+    return sanitizeFileNamePart(firstAudio)
   }
 
-  return `${sanitizeFileNamePart(job.title)}.srt`
+  return sanitizeFileNamePart(job.title)
 }
 
-function relocateSrtToDir(sourcePath: string, destDir: string, destFileName?: string): string {
+function saveSubtitleFormats(
+  sourceSrtPath: string,
+  destDir: string,
+  baseName: string,
+  formats: SubtitleFormat[]
+): string[] {
   mkdirSync(destDir, { recursive: true })
-  const dest = join(destDir, destFileName ?? basename(sourcePath))
+  const mergedSrt = readFileSync(sourceSrtPath, 'utf-8')
+  const savedPaths = formats.map((format) => {
+    const destPath = join(destDir, `${baseName}.${format}`)
+    writeFileSync(destPath, convertSrtToFormat(mergedSrt, format), 'utf-8')
+    return destPath
+  })
 
-  if (dest === sourcePath) {
-    return sourcePath
+  if (!savedPaths.includes(sourceSrtPath)) {
+    rmSync(sourceSrtPath, { force: true })
   }
 
-  copyFileSync(sourcePath, dest)
-  rmSync(sourcePath, { force: true })
-  return dest
+  return savedPaths
 }
 
-async function saveMultipartLocalSrts(
+async function saveMultipartLocalSubtitles(
   sourceSrtPath: string,
   audioFiles: string[],
-  outputDir: string
+  outputDir: string,
+  formats: SubtitleFormat[]
 ): Promise<string[]> {
   mkdirSync(outputDir, { recursive: true })
 
@@ -303,11 +338,14 @@ async function saveMultipartLocalSrts(
     probeResults.map((result) => result.duration)
   )
 
-  const savedPaths = audioFiles.map((audioFile, index) => {
+  const savedPaths = audioFiles.flatMap((audioFile, index) => {
     const baseName = basename(audioFile, extname(audioFile))
-    const destPath = join(outputDir, `${sanitizeFileNamePart(baseName)}.srt`)
-    writeFileSync(destPath, splitSrts[index] ?? '', 'utf-8')
-    return destPath
+    const partSrt = splitSrts[index] ?? ''
+    return formats.map((format) => {
+      const destPath = join(outputDir, `${sanitizeFileNamePart(baseName)}.${format}`)
+      writeFileSync(destPath, convertSrtToFormat(partSrt, format), 'utf-8')
+      return destPath
+    })
   })
 
   rmSync(sourceSrtPath, { force: true })
@@ -350,12 +388,11 @@ async function resolveAbsAudioPaths(job: TranscriptionJob): Promise<{
     throw new Error(validation.error)
   }
 
-  const apiKey = await loadApiKey()
-  if (!apiKey) {
-    throw new Error('ABS API key not configured')
-  }
-
   const baseUrl = validation.normalizedUrl
+  const apiKey = await resolveAbsAccessToken(baseUrl)
+  if (!apiKey) {
+    throw new Error('Sign in to Audiobookshelf in Settings first.')
+  }
   const book = await fetchAbsBook(baseUrl, apiKey, job.absItemId)
   const audioPaths = buildAbsAudioPaths(baseUrl, book)
 
@@ -447,6 +484,7 @@ async function runNext(): Promise<void> {
           const response = await axios.get(audioPath, {
             responseType: 'stream',
             headers,
+            maxRedirects: headers ? 0 : 5,
             signal: downloadAbortController.signal
           })
 
@@ -539,10 +577,11 @@ async function runNext(): Promise<void> {
     const mergedSrt = readFileSync(srtPath, 'utf-8')
     const qualityDuration = await sumDurations(audioPaths).catch(() => 0)
     next.qualityReport = createQualityReport(parseSrtContent(mergedSrt), qualityDuration)
+    const subtitleFormats = next.subtitleFormats ?? ['srt']
 
     if (next.source === 'abs' && next.absItemId) {
       if (!absBaseUrl || !absApiKey) {
-        throw new Error('ABS upload requires a validated server URL and API key.')
+        throw new Error('ABS upload requires a validated server URL and signed-in session.')
       }
 
       try {
@@ -551,19 +590,25 @@ async function runNext(): Promise<void> {
         }
 
         emitProgress({ phase: 'uploading', percent: 0 })
-        await uploadSubtitleToAbs(absBaseUrl, absApiKey, next.absItemId, srtPath, (percent) => {
-          emitProgress({ phase: 'uploading', percent })
-        })
+        await uploadSubtitleToAbs(
+          absBaseUrl,
+          absApiKey,
+          next.absItemId,
+          srtPath,
+          subtitleFormats,
+          (percent) => emitProgress({ phase: 'uploading', percent })
+        )
         rmSync(srtPath, { force: true })
         next.srtPath = null
         next.srtPaths = []
       } catch {
-        next.srtPath = relocateSrtToDir(
+        next.srtPaths = saveSubtitleFormats(
           srtPath,
           join(app.getPath('userData'), 'srt'),
-          getJobSrtFileName(next)
+          getJobSubtitleBaseName(next),
+          subtitleFormats
         )
-        next.srtPaths = next.srtPath ? [next.srtPath] : []
+        next.srtPath = next.srtPaths.find((path) => extname(path).toLowerCase() === '.srt') ?? null
         next.qualityReport = createQualityReport(parseSrtContent(mergedSrt), qualityDuration, [
           {
             severity: 'warning',
@@ -575,12 +620,21 @@ async function runNext(): Promise<void> {
       }
     } else if (next.outputPath) {
       if (next.audioFiles.length > 1) {
-        next.srtPaths = await saveMultipartLocalSrts(srtPath, next.audioFiles, next.outputPath)
-        next.srtPath = next.srtPaths[0] ?? null
+        next.srtPaths = await saveMultipartLocalSubtitles(
+          srtPath,
+          next.audioFiles,
+          next.outputPath,
+          subtitleFormats
+        )
       } else {
-        next.srtPath = relocateSrtToDir(srtPath, next.outputPath, getJobSrtFileName(next))
-        next.srtPaths = next.srtPath ? [next.srtPath] : []
+        next.srtPaths = saveSubtitleFormats(
+          srtPath,
+          next.outputPath,
+          getJobSubtitleBaseName(next),
+          subtitleFormats
+        )
       }
+      next.srtPath = next.srtPaths.find((path) => extname(path).toLowerCase() === '.srt') ?? null
     } else {
       next.srtPath = srtPath
       next.srtPaths = [srtPath]
@@ -590,8 +644,7 @@ async function runNext(): Promise<void> {
     next.completedAt = Date.now()
     clearTranscriptionCheckpoint(next.id)
   } catch (error) {
-    const isCancelled =
-      cancelRequested || (error instanceof Error && error.message === 'Cancelled')
+    const isCancelled = cancelRequested || (error instanceof Error && error.message === 'Cancelled')
 
     if (pauseRequested) {
       next.status = 'paused'

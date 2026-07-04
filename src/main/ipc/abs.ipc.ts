@@ -3,11 +3,35 @@ import axios from 'axios'
 import FormData from 'form-data'
 import { readFileSync } from 'fs'
 import { basename, extname } from 'path'
-import { loadApiKey, loadSettings } from './settings.ipc'
+import {
+  clearAbsSession,
+  loadAbsSession,
+  loadSettings,
+  saveAbsLoginProfile,
+  saveAbsSession
+} from './settings.ipc'
 import { splitSrtByDurations } from '../whisper/segments'
+import { convertSrtToFormat, getSubtitleMimeType } from '../whisper/subtitleFormats'
 import { IPC } from '../../shared/types'
 import { validateAbsUrl } from '../../shared/urlSafety'
-import type { AbsLibrary, AbsBook, AbsAudioFile } from '../../shared/types'
+import type {
+  AbsLibrary,
+  AbsBook,
+  AbsAudioFile,
+  AbsLoginResult,
+  SubtitleFormat
+} from '../../shared/types'
+
+interface AbsLoginResponse {
+  user?: {
+    username?: string
+    type?: string
+    token?: string
+    accessToken?: string
+    refreshToken?: string
+  }
+  serverSettings?: { version?: string }
+}
 
 interface AbsApiLibrary {
   id: string
@@ -58,8 +82,8 @@ async function getBaseUrlAndKey(): Promise<{ baseUrl: string; apiKey: string }> 
   const validation = validateAbsUrl(settings.absUrl)
   if (!validation.ok) throw new Error(validation.error)
   const baseUrl = validation.normalizedUrl
-  const apiKey = await loadApiKey()
-  if (!apiKey) throw new Error('ABS API key not configured')
+  const apiKey = await resolveAbsAccessToken(baseUrl)
+  if (!apiKey) throw new Error('Sign in to Audiobookshelf in Settings first.')
   return { baseUrl, apiKey }
 }
 
@@ -67,14 +91,142 @@ function authHeaders(apiKey: string): Record<string, string> {
   return { Authorization: `Bearer ${apiKey}` }
 }
 
+function isLoopbackUrl(url: string): boolean {
+  const hostname = new URL(url).hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  return hostname === 'localhost' || hostname === '::1' || /^127(?:\.\d{1,3}){3}$/.test(hostname)
+}
+
+export async function loginToAbs(
+  baseUrlInput: string,
+  usernameInput: string,
+  password: string
+): Promise<AbsLoginResult> {
+  if (
+    typeof baseUrlInput !== 'string' ||
+    typeof usernameInput !== 'string' ||
+    typeof password !== 'string'
+  ) {
+    throw new Error('Enter a valid server URL, username, and password.')
+  }
+  const validation = validateAbsUrl(baseUrlInput)
+  if (!validation.ok) throw new Error(validation.error)
+  if (
+    new URL(validation.normalizedUrl).protocol !== 'https:' &&
+    !isLoopbackUrl(validation.normalizedUrl)
+  ) {
+    throw new Error('Audiobookshelf sign-in requires HTTPS unless the server is on this computer.')
+  }
+  const username = usernameInput.trim()
+  if (!username) throw new Error('Enter your Audiobookshelf username.')
+  if (username.length > 200 || password.length > 1024) {
+    throw new Error('Audiobookshelf login details are too long.')
+  }
+
+  let response
+  try {
+    response = await axios.post<AbsLoginResponse>(
+      `${validation.normalizedUrl}/login`,
+      { username, password },
+      {
+        headers: { Accept: 'application/json', 'x-return-tokens': 'true' },
+        timeout: 8000,
+        maxRedirects: 0
+      }
+    )
+  } catch (error) {
+    if (
+      axios.isAxiosError(error) &&
+      (error.response?.status === 401 || error.response?.status === 403)
+    ) {
+      throw new Error('Incorrect Audiobookshelf username or password.')
+    }
+    if (axios.isAxiosError(error) && error.code === 'ECONNABORTED') {
+      throw new Error('Audiobookshelf login timed out.')
+    }
+    throw new Error('Could not reach the configured Audiobookshelf server.')
+  }
+
+  const user = response.data.user
+  const accessToken = user?.accessToken ?? user?.token
+  if (!accessToken || !user?.username) {
+    throw new Error('Audiobookshelf returned an invalid login response.')
+  }
+
+  await saveAbsSession({
+    baseUrl: validation.normalizedUrl,
+    accessToken,
+    ...(user.refreshToken ? { refreshToken: user.refreshToken } : {})
+  })
+  saveAbsLoginProfile(validation.normalizedUrl, user.username)
+
+  return {
+    username: user.username,
+    userType: user.type ?? 'user',
+    serverVersion: response.data.serverSettings?.version ?? 'unknown'
+  }
+}
+
+export async function resolveAbsAccessToken(baseUrl: string): Promise<string | null> {
+  const session = await loadAbsSession()
+  if (!session) return null
+  if (session.baseUrl !== baseUrl) return null
+  if (!session.refreshToken) return session.accessToken
+
+  try {
+    await axios.post(`${baseUrl}/api/authorize`, null, {
+      headers: authHeaders(session.accessToken),
+      timeout: 8000,
+      maxRedirects: 0
+    })
+    return session.accessToken
+  } catch (error) {
+    if (!axios.isAxiosError(error) || error.response?.status !== 401) return session.accessToken
+  }
+
+  try {
+    const response = await axios.post<AbsLoginResponse>(`${baseUrl}/auth/refresh`, null, {
+      headers: { 'x-refresh-token': session.refreshToken },
+      timeout: 8000,
+      maxRedirects: 0
+    })
+    const accessToken = response.data.user?.accessToken
+    if (!accessToken) return null
+    await saveAbsSession({
+      baseUrl,
+      accessToken,
+      refreshToken: response.data.user?.refreshToken ?? session.refreshToken
+    })
+    return accessToken
+  } catch {
+    return null
+  }
+}
+
+export async function logoutFromAbs(): Promise<void> {
+  const session = await loadAbsSession()
+  try {
+    if (session) {
+      await axios.post(`${session.baseUrl}/logout`, null, {
+        headers: {
+          ...authHeaders(session.accessToken),
+          ...(session.refreshToken ? { 'x-refresh-token': session.refreshToken } : {})
+        },
+        timeout: 5000,
+        maxRedirects: 0
+      })
+    }
+  } catch {
+    // Local sign-out must still succeed if the server is offline or does not support logout.
+  } finally {
+    await clearAbsSession()
+  }
+}
+
 function sanitizeFileNamePart(value: string): string {
   const sanitized = value
     .replace(/\.(m4b|mp3|m4a|wav|flac|ogg|aac)$/i, '')
     .replace(/[<>:"/\\|?*]/g, ' ')
-    .replace(
-      /./g,
-      (char) => (char.charCodeAt(0) < 32 ? ' ' : char)
-    )
+    .replace(/./g, (char) => (char.charCodeAt(0) < 32 ? ' ' : char))
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[. ]+$/g, '')
@@ -141,21 +293,22 @@ export function mapAbsItemToBook(item: AbsApiItem, baseUrl: string): AbsBook {
   }
 }
 
-export function testAbsConnection(baseUrl: string, apiKey: string): Promise<boolean> {
-  return axios
-    .get(`${baseUrl}/api/libraries`, { headers: authHeaders(apiKey), timeout: 8000 })
-    .then(() => true)
-    .catch(() => false)
-}
-
-export async function fetchAbsBook(baseUrl: string, apiKey: string, itemId: string): Promise<AbsBook> {
+export async function fetchAbsBook(
+  baseUrl: string,
+  apiKey: string,
+  itemId: string
+): Promise<AbsBook> {
   const res = await axios.get<AbsApiItem>(`${baseUrl}/api/items/${itemId}?expanded=1`, {
-    headers: authHeaders(apiKey)
+    headers: authHeaders(apiKey),
+    maxRedirects: 0
   })
   return mapAbsItemToBook(res.data, baseUrl)
 }
 
-export function buildAbsAudioPaths(baseUrl: string, book: Pick<AbsBook, 'id' | 'audioFiles'>): string[] {
+export function buildAbsAudioPaths(
+  baseUrl: string,
+  book: Pick<AbsBook, 'id' | 'audioFiles'>
+): string[] {
   return book.audioFiles.map((audioFile) => {
     if (audioFile.contentUrl) {
       return new URL(audioFile.contentUrl, `${baseUrl}/`).toString()
@@ -219,41 +372,41 @@ function getUploadFields(book: AbsBook): {
   }
 }
 
-function getAudioSubtitleFileName(audioFile: AbsAudioFile | undefined, fallbackTitle: string): string {
+function getAudioSubtitleBaseName(
+  audioFile: AbsAudioFile | undefined,
+  fallbackTitle: string
+): string {
   const baseName = audioFile?.metadata?.filename
     ? basename(audioFile.metadata.filename, extname(audioFile.metadata.filename))
     : fallbackTitle
 
-  return `${sanitizeFileNamePart(baseName)}.srt`
+  return sanitizeFileNamePart(baseName)
 }
 
 function buildSubtitleUploads(
   book: AbsBook,
   mergedSrt: string,
-  fallbackTitle: string
-): Array<{ filename: string; content: string }> {
+  fallbackTitle: string,
+  formats: SubtitleFormat[]
+): Array<{ filename: string; content: string; contentType: string }> {
   const orderedAudioFiles = [...book.audioFiles].sort((a, b) => a.index - b.index)
+  const parts =
+    orderedAudioFiles.length <= 1
+      ? [{ audioFile: orderedAudioFiles[0], srt: mergedSrt }]
+      : splitSrtByDurations(
+          mergedSrt,
+          orderedAudioFiles.map((audioFile) => audioFile.duration)
+        ).map((srt, index) => ({ audioFile: orderedAudioFiles[index], srt }))
 
-  if (orderedAudioFiles.length <= 1) {
-    return [
-      {
-        filename: getAudioSubtitleFileName(orderedAudioFiles[0], fallbackTitle),
-        content: mergedSrt
-      }
-    ]
-  }
-
-  const splitSrts = splitSrtByDurations(
-    mergedSrt,
-    orderedAudioFiles.map((audioFile) => audioFile.duration)
-  )
-
-  return orderedAudioFiles
-    .map((audioFile, index) => ({
-      filename: getAudioSubtitleFileName(audioFile, fallbackTitle),
-      content: splitSrts[index] ?? ''
+  return parts.flatMap(({ audioFile, srt }) => {
+    if (!srt.trim()) return []
+    const baseName = getAudioSubtitleBaseName(audioFile, fallbackTitle)
+    return formats.map((format) => ({
+      filename: `${baseName}.${format}`,
+      content: convertSrtToFormat(srt, format),
+      contentType: getSubtitleMimeType(format)
     }))
-    .filter((upload) => upload.content.trim().length > 0)
+  })
 }
 
 async function postSubtitleUpload(
@@ -261,7 +414,8 @@ async function postSubtitleUpload(
   apiKey: string,
   uploadFields: ReturnType<typeof getUploadFields>,
   filename: string,
-  content: string
+  content: string,
+  contentType: string
 ): Promise<void> {
   const form = new FormData()
   form.append('library', uploadFields.libraryId)
@@ -275,7 +429,7 @@ async function postSubtitleUpload(
   }
   form.append('0', Buffer.from(content, 'utf-8'), {
     filename,
-    contentType: 'application/x-subrip'
+    contentType
   })
 
   await axios.post(url, form, {
@@ -284,7 +438,8 @@ async function postSubtitleUpload(
       ...form.getHeaders()
     },
     maxContentLength: Infinity,
-    maxBodyLength: Infinity
+    maxBodyLength: Infinity,
+    maxRedirects: 0
   })
 }
 
@@ -293,13 +448,14 @@ export async function uploadSubtitleToAbs(
   apiKey: string,
   itemId: string,
   srtPath: string,
+  formats: SubtitleFormat[],
   onProgress?: (percent: number) => void
 ): Promise<void> {
   const book = await fetchAbsBook(baseUrl, apiKey, itemId)
   const uploadFields = getUploadFields(book)
   const url = `${baseUrl}/api/upload`
   const mergedSrt = readFileSync(srtPath, 'utf-8')
-  const uploads = buildSubtitleUploads(book, mergedSrt, uploadFields.title || book.title)
+  const uploads = buildSubtitleUploads(book, mergedSrt, uploadFields.title || book.title, formats)
 
   if (uploads.length === 0) {
     throw new Error('No subtitle text was available to upload to ABS.')
@@ -309,18 +465,26 @@ export async function uploadSubtitleToAbs(
     onProgress?.(0)
 
     for (const [index, upload] of uploads.entries()) {
-      await postSubtitleUpload(url, apiKey, uploadFields, upload.filename, upload.content)
+      await postSubtitleUpload(
+        url,
+        apiKey,
+        uploadFields,
+        upload.filename,
+        upload.content,
+        upload.contentType
+      )
       onProgress?.(Math.round(((index + 1) / (uploads.length + 1)) * 85))
     }
 
     await axios.post(`${baseUrl}/api/items/${itemId}/scan`, null, {
-      headers: authHeaders(apiKey)
+      headers: authHeaders(apiKey),
+      maxRedirects: 0
     })
     onProgress?.(100)
   } catch (err) {
     if (axios.isAxiosError(err) && err.response) {
       throw new Error(
-        `SRT upload failed (HTTP ${err.response.status}) - ${url}: ${String(err.response.data ?? '')}`
+        `Subtitle upload failed (HTTP ${err.response.status}) - ${url}: ${String(err.response.data ?? '')}`
       )
     }
     throw err
@@ -328,20 +492,19 @@ export async function uploadSubtitleToAbs(
 }
 
 export function registerAbsIpc(): void {
-  ipcMain.handle(IPC.ABS_TEST_CONNECTION, async (_event, url: string, key: string) => {
-    const validation = validateAbsUrl(url)
-    if (!validation.ok) {
-      return false
-    }
+  ipcMain.handle(IPC.ABS_LOGIN, (_event, url: string, username: string, password: string) =>
+    loginToAbs(url, username, password)
+  )
 
-    const baseUrl = validation.normalizedUrl
-    return testAbsConnection(baseUrl, key)
+  ipcMain.handle(IPC.ABS_LOGOUT, async () => {
+    await logoutFromAbs()
   })
 
   ipcMain.handle(IPC.ABS_GET_LIBRARIES, async () => {
     const { baseUrl, apiKey } = await getBaseUrlAndKey()
     const res = await axios.get<{ libraries: AbsApiLibrary[] }>(`${baseUrl}/api/libraries`, {
-      headers: authHeaders(apiKey)
+      headers: authHeaders(apiKey),
+      maxRedirects: 0
     })
     return res.data.libraries.map<AbsLibrary>((lib) => ({
       id: lib.id,
@@ -354,7 +517,7 @@ export function registerAbsIpc(): void {
     const { baseUrl, apiKey } = await getBaseUrlAndKey()
     const res = await axios.get<{ results: AbsApiItem[] }>(
       `${baseUrl}/api/libraries/${libraryId}/items?limit=500&page=0`,
-      { headers: authHeaders(apiKey) }
+      { headers: authHeaders(apiKey), maxRedirects: 0 }
     )
     return fetchAbsBooksWithDetails(baseUrl, apiKey, res.data.results)
   })

@@ -56,7 +56,7 @@ export function validateAbsUrl(
   }
 
   if (parsedUrl.username || parsedUrl.password) {
-    return { ok: false, error: 'Embed credentials in the API key field, not in the server URL.' }
+    return { ok: false, error: 'Remove embedded credentials and sign in with username and password.' }
   }
 
   if (parsedUrl.search || parsedUrl.hash) {

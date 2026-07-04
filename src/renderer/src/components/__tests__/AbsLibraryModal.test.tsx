@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { AbsBook } from '../../../../shared/types'
 import { AbsLibraryModal } from '../AbsLibraryModal'
@@ -70,8 +70,21 @@ describe('AudioBookShelf library modal', () => {
       absModalOpen: true,
       absLibrary: {
         connected: true,
-        libraries: [{ id: 'library-1', name: 'Main Shelf', mediaType: 'book' }],
-        books: { 'library-1': books },
+        libraries: [
+          { id: 'library-1', name: 'Main Shelf', mediaType: 'book' },
+          { id: 'library-2', name: 'Sci-Fi Shelf', mediaType: 'book' }
+        ],
+        books: {
+          'library-1': books,
+          'library-2': [
+            createBook({
+              id: 'book-4',
+              libraryId: 'library-2',
+              title: 'Dune',
+              authorName: 'Frank Herbert'
+            })
+          ]
+        },
         lastFetched: Date.now()
       }
     })
@@ -85,32 +98,32 @@ describe('AudioBookShelf library modal', () => {
     const getVisibleTitles = (): string[] =>
       screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent ?? '')
 
-    expect(getVisibleTitles()).toEqual([
-      'Project Hail Mary',
-      'The Way of Kings',
-      'Atlas Shrugged'
-    ])
+    expect(getVisibleTitles()).toEqual(['Project Hail Mary', 'The Way of Kings', 'Atlas Shrugged'])
 
     fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'author' } })
-    expect(getVisibleTitles()).toEqual([
-      'Project Hail Mary',
-      'Atlas Shrugged',
-      'The Way of Kings'
-    ])
+    expect(getVisibleTitles()).toEqual(['Project Hail Mary', 'Atlas Shrugged', 'The Way of Kings'])
 
     fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'missing-srt' } })
-    expect(getVisibleTitles()).toEqual([
-      'Project Hail Mary',
-      'The Way of Kings',
-      'Atlas Shrugged'
-    ])
+    expect(getVisibleTitles()).toEqual(['Project Hail Mary', 'The Way of Kings', 'Atlas Shrugged'])
 
     fireEvent.change(screen.getByLabelText('Sort by'), { target: { value: 'has-srt' } })
-    expect(getVisibleTitles()).toEqual([
-      'Atlas Shrugged',
-      'Project Hail Mary',
-      'The Way of Kings'
-    ])
+    expect(getVisibleTitles()).toEqual(['Atlas Shrugged', 'Project Hail Mary', 'The Way of Kings'])
+  })
+
+  it('keeps the library selector in the compact source browser toolbar', async () => {
+    render(<AbsLibraryModal />)
+
+    const toolbar = screen.getByTestId('source-browser-toolbar')
+    const librarySelector = within(toolbar).getByLabelText('Audiobookshelf library')
+
+    expect(librarySelector).toHaveValue('library-1')
+    expect(within(toolbar).getByRole('button', { name: 'Batch Select' })).toBeInTheDocument()
+    expect(within(toolbar).getByRole('button', { name: 'Refresh' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Main Shelf' })).not.toBeInTheDocument()
+
+    fireEvent.change(librarySelector, { target: { value: 'library-2' } })
+
+    expect(await screen.findByRole('heading', { level: 3, name: 'Dune' })).toBeInTheDocument()
   })
 
   it('selects a grid card and loads it back into the composer', async () => {

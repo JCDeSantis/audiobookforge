@@ -8,7 +8,8 @@ import { validateAbsUrl } from '../../shared/urlSafety'
 import type { AppSettings, WhisperModel } from '../../shared/types'
 
 const SERVICE = 'audiobookforge'
-const ACCOUNT = 'abs-api-key'
+const LEGACY_ACCOUNT = 'abs-api-key'
+const SESSION_ACCOUNT = 'abs-session'
 const DEFAULT_MODEL: WhisperModel = 'large-v3-turbo-q5_0'
 const VALID_MODELS = new Set<WhisperModel>(WHISPER_MODELS.map((model) => model.id))
 
@@ -30,10 +31,11 @@ export function loadSettings(): AppSettings {
 
     return {
       absUrl: validatedUrl && validatedUrl.ok ? validatedUrl.normalizedUrl : '',
+      absUsername: typeof parsed.absUsername === 'string' ? parsed.absUsername : '',
       defaultModel: getDefaultModel(parsed.defaultModel)
     }
   } catch {
-    return { absUrl: '', defaultModel: DEFAULT_MODEL }
+    return { absUrl: '', absUsername: '', defaultModel: DEFAULT_MODEL }
   }
 }
 
@@ -42,12 +44,49 @@ function saveSettings(settings: AppSettings): void {
   writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2), 'utf-8')
 }
 
-export async function saveApiKey(key: string): Promise<void> {
-  await keytar.setPassword(SERVICE, ACCOUNT, key.trim())
+export interface AbsSession {
+  baseUrl: string
+  accessToken: string
+  refreshToken?: string
 }
 
-export async function loadApiKey(): Promise<string | null> {
-  return keytar.getPassword(SERVICE, ACCOUNT)
+export async function saveAbsSession(session: AbsSession): Promise<void> {
+  await keytar.setPassword(SERVICE, SESSION_ACCOUNT, JSON.stringify(session))
+  await keytar.deletePassword(SERVICE, LEGACY_ACCOUNT)
+}
+
+export async function loadAbsSession(): Promise<AbsSession | null> {
+  const raw = await keytar.getPassword(SERVICE, SESSION_ACCOUNT)
+  if (!raw) return null
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<AbsSession>
+    if (typeof parsed.baseUrl !== 'string' || typeof parsed.accessToken !== 'string') return null
+    return {
+      baseUrl: parsed.baseUrl,
+      accessToken: parsed.accessToken,
+      ...(typeof parsed.refreshToken === 'string' ? { refreshToken: parsed.refreshToken } : {})
+    }
+  } catch {
+    return null
+  }
+}
+
+export async function clearAbsSession(): Promise<void> {
+  await Promise.all([
+    keytar.deletePassword(SERVICE, SESSION_ACCOUNT),
+    keytar.deletePassword(SERVICE, LEGACY_ACCOUNT)
+  ])
+  const settings = loadSettings()
+  settings.absUsername = ''
+  saveSettings(settings)
+}
+
+export function saveAbsLoginProfile(baseUrl: string, username: string): void {
+  const settings = loadSettings()
+  settings.absUrl = baseUrl
+  settings.absUsername = username
+  saveSettings(settings)
 }
 
 export function registerSettingsIpc(): void {
@@ -64,14 +103,6 @@ export function registerSettingsIpc(): void {
     const settings = loadSettings()
     settings.absUrl = validation.normalizedUrl
     saveSettings(settings)
-  })
-
-  ipcMain.handle(IPC.SETTINGS_SET_API_KEY, async (_event, key: string) => {
-    if (typeof key !== 'string' || key.trim().length === 0) {
-      throw new Error('Enter an AudioBookShelf API key before saving.')
-    }
-
-    await saveApiKey(key)
   })
 
   ipcMain.handle(IPC.SETTINGS_SET_DEFAULT_MODEL, (_event, model: WhisperModel) => {

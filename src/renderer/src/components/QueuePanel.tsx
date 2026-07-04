@@ -59,58 +59,34 @@ function StatusBadge({
     const badgePercent = job.progress.overallPercent ?? job.progress.percent
 
     return (
-      <span className="inline-flex min-w-[6.25rem] justify-center rounded-full bg-[#7f1d1d] px-2.5 py-1 text-[11px] font-medium tabular-nums text-[#ffd7d7]">
+      <span className="status-badge bg-[#7f1d1d] tabular-nums text-[#ffd7d7]">
         Running {badgePercent}%
       </span>
     )
   }
 
   if (isActive) {
-    return (
-      <span className="inline-flex min-w-[6.25rem] justify-center rounded-full bg-[#7f1d1d] px-2.5 py-1 text-[11px] font-medium text-[#ffd7d7]">
-        Running
-      </span>
-    )
+    return <span className="status-badge bg-[#7f1d1d] text-[#ffd7d7]">Running</span>
   }
 
   if (job.status === 'queued') {
-    return (
-      <span className="rounded-full bg-[#281010] px-2.5 py-1 text-[11px] font-medium text-[#e2b3b3]">
-        Queued
-      </span>
-    )
+    return <span className="status-badge bg-[#281010] text-[#e2b3b3]">Queued</span>
   }
 
   if (job.status === 'done') {
-    return (
-      <span className="rounded-full bg-[#183824] px-2.5 py-1 text-[11px] font-medium text-[#9fe0bb]">
-        Done
-      </span>
-    )
+    return <span className="status-badge bg-[#183824] text-[#9fe0bb]">Done</span>
   }
 
   if (job.status === 'failed') {
-    return (
-      <span className="rounded-full bg-[#401414] px-2.5 py-1 text-[11px] font-medium text-[#ff9f9f]">
-        Failed
-      </span>
-    )
+    return <span className="status-badge bg-[#401414] text-[#ff9f9f]">Failed</span>
   }
 
   if (job.status === 'cancelled') {
-    return (
-      <span className="rounded-full bg-[#281010] px-2.5 py-1 text-[11px] font-medium text-[#d3a8a8]">
-        Cancelled
-      </span>
-    )
+    return <span className="status-badge bg-[#281010] text-[#d3a8a8]">Cancelled</span>
   }
 
   if (job.status === 'paused') {
-    return (
-      <span className="rounded-md bg-[#2d1828] px-2.5 py-1 text-[11px] font-medium text-[#efc4ff]">
-        Paused
-      </span>
-    )
+    return <span className="status-badge bg-[#2d1828] text-[#efc4ff]">Paused</span>
   }
 
   return <></>
@@ -134,6 +110,13 @@ function JobCard({
     isActive && typeof now === 'number'
       ? formatElapsedTime(job.startedAt ?? job.createdAt, now)
       : null
+  const stablePhaseLabel = job.progress
+    ? phaseLabel(job.progress.phase)
+    : job.status === 'paused'
+      ? 'Paused'
+      : isActive
+        ? 'Starting'
+        : 'Waiting in queue'
 
   const handleCancel = (): void => {
     window.electron.queue.cancel(job.id)
@@ -163,7 +146,7 @@ function JobCard({
 
   return (
     <article
-      className={`rounded-lg border px-4 py-3 ${
+      className={`overflow-hidden rounded-lg border px-3.5 py-3 ${quiet ? 'min-h-[9.5rem]' : 'h-[11.75rem]'} ${
         isActive
           ? 'border-[#8f2b2b] bg-[#170909]'
           : quiet
@@ -174,58 +157,75 @@ function JobCard({
       }`}
     >
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 text-sm font-semibold leading-5 text-[#fff1f1]">{job.title}</div>
+        <div
+          className="h-5 min-w-0 truncate text-sm font-semibold leading-5 text-[#fff1f1]"
+          title={job.title}
+        >
+          {job.title}
+        </div>
         <StatusBadge job={job} isActive={isActive} />
       </div>
       <div
-        className="mt-1 whitespace-nowrap text-[11px] leading-4 text-[#bb9191]"
+        className="mt-1 h-4 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] leading-4 text-[#bb9191]"
         title={`${job.source === 'abs' ? 'AudioBookShelf' : 'Local files'} - ${modelName}`}
       >
         {job.source === 'abs' ? 'AudioBookShelf' : 'Local files'} - {modelName}
       </div>
 
-      {isActive && job.progress && (
-        <div className="mt-3">
-          <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
-            <span className="text-[#f0c3c3]">{phaseLabel(job.progress.phase)}</span>
-            <span className="text-[#9d7272]">{job.progress.percent}%</span>
+      {!quiet && (
+        <div
+          className="mt-2 h-[4.25rem] overflow-hidden"
+          data-testid={`job-progress-slot-${job.id}`}
+        >
+          <div className="mb-1.5 flex h-5 items-center justify-between gap-3 text-xs">
+            <span className="min-w-0 truncate text-[#f0c3c3]">{stablePhaseLabel}</span>
+            <span className="flex-none tabular-nums text-[#9d7272]">
+              {job.progress ? `${job.progress.percent}%` : '\u00A0'}
+            </span>
           </div>
           <div
-            aria-label={`${job.title} progress`}
+            aria-label={job.progress ? `${job.title} progress` : undefined}
             aria-valuemax={100}
             aria-valuemin={0}
-            aria-valuenow={job.progress.percent}
+            aria-valuenow={job.progress?.percent}
             className="h-1.5 overflow-hidden rounded-full bg-[#220d0d]"
-            role="progressbar"
+            role={job.progress ? 'progressbar' : undefined}
           >
             <div
               className="h-full rounded-full bg-[#dc2626] transition-all"
-              style={{ width: `${job.progress.percent}%` }}
+              style={{ width: `${job.progress?.percent ?? 0}%` }}
             />
           </div>
           <div
             className="mt-2 h-5 overflow-hidden text-ellipsis whitespace-nowrap text-xs leading-5 text-[#b48c8c]"
-            title={job.progress.liveText ?? ''}
+            title={job.progress?.liveText ?? ''}
           >
-            {job.progress.liveText ?? '\u00A0'}
+            {job.progress?.liveText ?? '\u00A0'}
           </div>
         </div>
       )}
 
       {job.status === 'failed' && job.error && (
-        <p className="mt-3 text-xs leading-5 text-[#ff9b9b]">{job.error}</p>
+        <p className="stable-clamp-2 mt-2 h-10 text-xs leading-5 text-[#ff9b9b]" title={job.error}>
+          {job.error}
+        </p>
       )}
 
       {job.qualityReport && (
-        <div className="mt-3 rounded-md border border-[#321919] bg-[#0b0404] px-3 py-2 text-xs leading-5 text-[#caa2a2]">
+        <div className="mt-2 max-h-[5.5rem] overflow-hidden rounded-md border border-[#321919] bg-[#0b0404] px-3 py-2 text-xs leading-5 text-[#caa2a2]">
           <div className="font-medium text-[#f1d6d6]">
-            Quality {job.qualityReport.issueCount === 0 ? 'looks clean' : `${job.qualityReport.issueCount} item${job.qualityReport.issueCount === 1 ? '' : 's'}`}
+            Quality{' '}
+            {job.qualityReport.issueCount === 0
+              ? 'looks clean'
+              : `${job.qualityReport.issueCount} item${job.qualityReport.issueCount === 1 ? '' : 's'}`}
           </div>
           <div>
             {job.qualityReport.cueCount} cues, {job.qualityReport.coveragePercent}% coverage
           </div>
           {job.qualityReport.issues[0] && (
-            <div className="text-[#f0b4b4]">{job.qualityReport.issues[0].message}</div>
+            <div className="truncate text-[#f0b4b4]" title={job.qualityReport.issues[0].message}>
+              {job.qualityReport.issues[0].message}
+            </div>
           )}
         </div>
       )}
@@ -254,13 +254,17 @@ function JobCard({
         <div className="mt-3 text-xs text-[#97d8ad]">Uploaded to AudioBookShelf</div>
       )}
 
-      <div className="mt-4 flex items-center gap-3 text-xs">
-        {elapsedText && <div className="text-[#9d7272]">Elapsed {elapsedText}</div>}
+      <div className={`${quiet ? 'mt-3' : 'mt-2'} flex h-8 items-center gap-2 text-xs`}>
+        {!quiet && (
+          <div className="min-w-[4.75rem] flex-none tabular-nums text-[#9d7272]">
+            {elapsedText ? `Elapsed ${elapsedText}` : '\u00A0'}
+          </div>
+        )}
 
-        <div className="ml-auto flex flex-wrap justify-end gap-2">
+        <div className="ml-auto flex min-w-0 flex-nowrap justify-end gap-1.5">
           {isActive && (
             <button
-              className="rounded-md border border-[#5b1f1f] px-3 py-1.5 text-[#f0c7c7] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
+              className="h-8 rounded-md border border-[#5b1f1f] px-2.5 text-[#f0c7c7] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
               onClick={handlePause}
             >
               Pause
@@ -268,7 +272,7 @@ function JobCard({
           )}
           {isActive && (
             <button
-              className="rounded-md border border-[#5b1f1f] px-3 py-1.5 text-[#f0c7c7] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
+              className="h-8 rounded-md border border-[#5b1f1f] px-2.5 text-[#f0c7c7] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
               onClick={handleCancel}
             >
               Cancel
@@ -366,8 +370,8 @@ export function QueuePanel(): React.JSX.Element {
   }
 
   return (
-    <aside className="flex w-[320px] flex-shrink-0 flex-col border-l border-[#2f1515] bg-[linear-gradient(180deg,#090303_0%,#050101_100%)]">
-      <div className="flex flex-1 flex-col overflow-y-auto px-4 py-5">
+    <aside className="flex w-[336px] flex-shrink-0 flex-col border-l border-[#2f1515] bg-[linear-gradient(180deg,#090303_0%,#050101_100%)]">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3.5 py-4">
         <section>
           <div className="mb-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#9f7171]">
             Active Jobs
@@ -377,7 +381,7 @@ export function QueuePanel(): React.JSX.Element {
               No jobs are running right now.
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-2.5">
               {activeJobs.map((job, index) => (
                 <div key={job.id} className="grid grid-cols-[1fr_auto] gap-2">
                   <JobCard job={job} now={now} />

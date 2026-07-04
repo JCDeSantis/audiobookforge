@@ -26,6 +26,8 @@ function createWindow(): void {
   const mainWindow = new BrowserWindow({
     width: 1054,
     height: 677,
+    minWidth: 900,
+    minHeight: 600,
     title: 'Audiobook Forge',
     icon: getWindowIconPath(),
     show: false,
@@ -42,9 +44,11 @@ function createWindow(): void {
 
   setQueueWindow(mainWindow)
 
-  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => {
-    callback(false)
-  })
+  mainWindow.webContents.session.setPermissionRequestHandler(
+    (_webContents, _permission, callback) => {
+      callback(false)
+    }
+  )
 
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     callback({
@@ -53,7 +57,7 @@ function createWindow(): void {
         'Content-Security-Policy': [
           app.isPackaged
             ? "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' https: http://localhost:* http://127.0.0.1:*"
-            : "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws://localhost:* http://localhost:* http://127.0.0.1:*"
+            : "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' ws://localhost:* http://localhost:* http://127.0.0.1:*"
         ]
       }
     })
@@ -61,6 +65,16 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+  })
+
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, url) => {
+    console.error(`Renderer failed to load ${url} (${errorCode}): ${errorDescription}`)
+  })
+
+  mainWindow.webContents.on('console-message', (details) => {
+    if (details.level === 'error' || details.level === 'warning') {
+      console.error(`[renderer:${details.level}] ${details.message}`)
+    }
   })
 
   mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
@@ -78,9 +92,13 @@ function createWindow(): void {
   })
 
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
-    void mainWindow.loadURL(expectedRendererUrl)
+    void mainWindow.loadURL(expectedRendererUrl).catch((error) => {
+      console.error('Failed to open the renderer URL.', error)
+    })
   } else {
-    void mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    void mainWindow.loadFile(join(__dirname, '../renderer/index.html')).catch((error) => {
+      console.error('Failed to open the packaged renderer.', error)
+    })
   }
 }
 

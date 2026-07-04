@@ -1,16 +1,18 @@
 import React from 'react'
 import appLogo from '../assets/app-logo.png'
+import packageJson from '../../../../package.json'
 import { useAppStore } from '../store/useAppStore'
 
 export function AppHeader(): React.JSX.Element {
+  const displayVersion = packageJson.version.replace(/\.0$/, '')
   const { queue, setSettingsOpen } = useAppStore()
   const activeCount = queue.jobs.filter(
     (job) => job.status === 'queued' || job.status === 'running'
   ).length
 
   return (
-    <header className="border-b border-[#2f1212] bg-[#090303]/95 px-6 py-4 backdrop-blur">
-      <div className="flex items-center justify-between gap-4">
+    <header className="flex h-[var(--app-header-height)] flex-none items-center border-b border-[#2f1212] bg-[#090303]/95 px-5 backdrop-blur">
+      <div className="flex w-full min-w-0 items-center gap-4">
         <div className="app-brand">
           <img alt="" className="app-brand-icon" src={appLogo} />
           <div className="app-brand-copy">
@@ -24,12 +26,18 @@ export function AppHeader(): React.JSX.Element {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="rounded-full border border-[#3c1717] bg-[#160808] px-3 py-1 text-[11px] text-[#d1aaaa]">
+        <div className="ml-auto flex flex-none items-center justify-end gap-2.5">
+          <span
+            aria-label={`Version ${displayVersion}`}
+            className="inline-flex h-6 flex-none items-center rounded-full border border-[#321818] bg-[#100606] px-2.5 text-[10px] font-medium tabular-nums text-[#987171]"
+          >
+            v{displayVersion}
+          </span>
+          <div className="inline-flex h-8 min-w-[5.25rem] items-center justify-center rounded-full border border-[#3c1717] bg-[#160808] px-3 text-[11px] text-[#d1aaaa]">
             Queue {activeCount}
           </div>
           <button
-            className="rounded-full border border-[#7f1d1d] bg-[#1a0808] px-4 py-2 text-sm font-medium text-[#fff3f3] transition-colors hover:border-[#dc2626] hover:bg-[#240b0b]"
+            className="h-9 rounded-full border border-[#7f1d1d] bg-[#1a0808] px-4 text-sm font-medium text-[#fff3f3] transition-colors hover:border-[#dc2626] hover:bg-[#240b0b]"
             onClick={() => setSettingsOpen(true)}
           >
             Settings

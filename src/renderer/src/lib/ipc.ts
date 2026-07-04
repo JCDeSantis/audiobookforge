@@ -6,12 +6,12 @@ import type {
   WhisperProgressEvent,
   WhisperStorageInfo
 } from '../../../shared/types'
+import type { AbsLoginResult } from '../../../shared/types'
 
 export interface ElectronAPI {
   settings: {
     get: () => Promise<AppSettings>
     setUrl: (url: string) => Promise<void>
-    setApiKey: (key: string) => Promise<void>
     setDefaultModel: (model: AppSettings['defaultModel']) => Promise<void>
   }
   files: {
@@ -33,7 +33,8 @@ export interface ElectronAPI {
     onUpdated: (callback: (jobs: TranscriptionJob[]) => void) => () => void
   }
   abs: {
-    testConnection: (url: string, key: string) => Promise<boolean>
+    login: (url: string, username: string, password: string) => Promise<AbsLoginResult>
+    logout: () => Promise<void>
     getLibraries: () => Promise<AbsLibrary[]>
     getBooks: (libraryId: string) => Promise<AbsBook[]>
     getBook: (itemId: string) => Promise<AbsBook>

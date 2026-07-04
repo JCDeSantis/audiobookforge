@@ -4,9 +4,12 @@ import { afterEach } from 'vitest'
 
 const defaultElectronMock = {
   settings: {
-    get: async () => ({ absUrl: '', defaultModel: 'large-v3-turbo-q5_0' as const }),
+    get: async () => ({
+      absUrl: '',
+      absUsername: '',
+      defaultModel: 'large-v3-turbo-q5_0' as const
+    }),
     setUrl: async () => undefined,
-    setApiKey: async () => undefined,
     setDefaultModel: async () => undefined
   },
   files: {
@@ -30,7 +33,8 @@ const defaultElectronMock = {
     onUpdated: () => () => undefined
   },
   abs: {
-    testConnection: async () => false,
+    login: async () => ({ username: 'test', userType: 'user', serverVersion: '2.0.0' }),
+    logout: async () => undefined,
     getLibraries: async () => [],
     getBooks: async () => [],
     getBook: async () => {

@@ -5,7 +5,8 @@ import type {
   AppSettings,
   AbsLibrary,
   AbsBook,
-  AbsBookSummary
+  AbsBookSummary,
+  SubtitleFormat
 } from '../../../shared/types'
 import {
   clearSelectedSource as clearDraftSource,
@@ -26,6 +27,7 @@ const defaultWizard: WizardState = {
   absItems: [],
   epubPath: null,
   model: 'large-v3-turbo-q5_0',
+  subtitleFormats: ['srt'],
   outputFolder: null
 }
 
@@ -61,6 +63,7 @@ interface AppStore {
   wizard: WizardState
   setWizardEpubPath: (path: string | null) => void
   setWizardModel: (model: WhisperModel) => void
+  setWizardSubtitleFormat: (format: SubtitleFormat, enabled: boolean) => void
   setWizardOutputFolder: (folder: string | null) => void
   selectLocalFiles: (files: string[]) => void
   selectAbsItem: (item: AbsBookSummary) => void
@@ -95,13 +98,15 @@ function isFreshDraft(wizard: WizardState, defaultModel: WhisperModel): boolean 
     wizard.absItems.length === 0 &&
     wizard.epubPath === null &&
     wizard.outputFolder === null &&
-    wizard.model === defaultModel
+    wizard.model === defaultModel &&
+    wizard.subtitleFormats.length === 1 &&
+    wizard.subtitleFormats[0] === 'srt'
   )
 }
 
 export const useAppStore = create<AppStore>((set) => ({
   // Settings
-  settings: { absUrl: '', defaultModel: 'large-v3-turbo-q5_0' },
+  settings: { absUrl: '', absUsername: '', defaultModel: 'large-v3-turbo-q5_0' },
   setSettings: (s) =>
     set((state) => ({
       settings: s,
@@ -114,6 +119,16 @@ export const useAppStore = create<AppStore>((set) => ({
   wizard: defaultWizard,
   setWizardEpubPath: (epubPath) => set((state) => ({ wizard: { ...state.wizard, epubPath } })),
   setWizardModel: (model) => set((state) => ({ wizard: { ...state.wizard, model } })),
+  setWizardSubtitleFormat: (format, enabled) =>
+    set((state) => {
+      const formats = new Set(state.wizard.subtitleFormats)
+      formats.add('srt')
+      if (format !== 'srt') {
+        if (enabled) formats.add(format)
+        else formats.delete(format)
+      }
+      return { wizard: { ...state.wizard, subtitleFormats: Array.from(formats) } }
+    }),
   setWizardOutputFolder: (outputFolder) =>
     set((state) => ({ wizard: { ...state.wizard, outputFolder } })),
   selectLocalFiles: (audioFiles) =>

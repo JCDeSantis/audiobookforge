@@ -19,9 +19,9 @@ export function SourceSelector(): React.JSX.Element {
       ? `${absSelectionCount} AudioBookShelf titles selected`
       : wizard.source === 'abs' && wizard.absItem
         ? `${wizard.absItem.title} - ${wizard.absItem.authorName}`
-      : wizard.source === 'local' && wizard.audioFiles.length > 0
-        ? getLocalSourceTitle(wizard.audioFiles)
-        : ''
+        : wizard.source === 'local' && wizard.audioFiles.length > 0
+          ? getLocalSourceTitle(wizard.audioFiles)
+          : ''
   const sourceDescription =
     wizard.source === 'abs'
       ? isMultiAbsSelection
@@ -47,18 +47,25 @@ export function SourceSelector(): React.JSX.Element {
 
   if (wizard.source && sourceLabel) {
     return (
-      <section className="rounded-[28px] border border-[#341414] bg-[#120707] p-5 shadow-[0_20px_40px_rgba(0,0,0,0.25)]">
+      <section className="h-[10.75rem] flex-none overflow-hidden rounded-[22px] border border-[#341414] bg-[#120707] p-4 shadow-[0_16px_32px_rgba(0,0,0,0.22)]">
         <div className="flex items-start justify-between gap-4">
-          <div>
+          <div className="min-w-0">
             <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#ae8181]">
               Selected Source
             </div>
-            <div className="mt-2 text-lg font-semibold text-[#fff3f3]">{sourceLabel}</div>
-            <div className="mt-1 max-w-2xl text-sm text-[#caacac]">{sourceDescription}</div>
+            <div
+              className="stable-clamp-2 mt-2 h-11 text-base font-semibold leading-[1.375rem] text-[#fff3f3]"
+              title={sourceLabel}
+            >
+              {sourceLabel}
+            </div>
+            <div className="stable-clamp-1 mt-1 h-5 max-w-2xl text-sm leading-5 text-[#caacac]">
+              {sourceDescription}
+            </div>
           </div>
 
           <button
-            className="rounded-full border border-[#472121] px-4 py-2 text-sm text-[#e9c5c5] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
+            className="h-9 flex-none rounded-full border border-[#472121] px-4 text-sm text-[#e9c5c5] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
             onClick={clearSelectedSource}
           >
             Change
@@ -69,39 +76,33 @@ export function SourceSelector(): React.JSX.Element {
   }
 
   return (
-    <section className="rounded-[28px] border border-[#341414] bg-[#120707] p-5 shadow-[0_20px_40px_rgba(0,0,0,0.25)]">
+    <section className="h-[10.75rem] flex-none overflow-hidden rounded-[22px] border border-[#341414] bg-[#120707] p-4 shadow-[0_16px_32px_rgba(0,0,0,0.22)]">
       <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#ae8181]">
         Choose Source
       </div>
-      <div className="mt-4 grid gap-3">
+      <div className="mt-3 grid gap-2">
         <button
-          className="group flex items-center justify-between rounded-[22px] border border-[#482020] bg-[#190909] px-5 py-4 text-left transition-all hover:border-[#dc2626] hover:bg-[#220c0c]"
+          className="group flex h-[3.45rem] items-center justify-between rounded-[16px] border border-[#482020] bg-[#190909] px-4 text-left transition-colors hover:border-[#dc2626] hover:bg-[#220c0c]"
           onClick={handleBrowseFiles}
         >
           <div>
-            <div className="text-base font-semibold text-[#fff3f3]">Browse Files</div>
-            <div className="mt-1 text-sm text-[#c7a3a3]">
-              Pick one or more `.m4b` or `.mp3` files
-            </div>
+            <div className="text-sm font-semibold text-[#fff3f3]">Browse Files</div>
+            <div className="text-xs text-[#c7a3a3]">Pick one or more `.m4b` or `.mp3` files</div>
           </div>
-          <div className="text-2xl text-[#fff3f3] transition-transform group-hover:translate-x-1">
-            -&gt;
-          </div>
+          <div className="text-lg text-[#fff3f3]">-&gt;</div>
         </button>
 
         <button
-          className="group flex items-center justify-between rounded-[22px] border border-[#482020] bg-[#190909] px-5 py-4 text-left transition-all hover:border-[#dc2626] hover:bg-[#220c0c]"
+          className="group flex h-[3.45rem] items-center justify-between rounded-[16px] border border-[#482020] bg-[#190909] px-4 text-left transition-colors hover:border-[#dc2626] hover:bg-[#220c0c]"
           onClick={handleBrowseAbs}
         >
           <div>
-            <div className="text-base font-semibold text-[#fff3f3]">Browse AudioBookShelf</div>
-            <div className="mt-1 text-sm text-[#c7a3a3]">
+            <div className="text-sm font-semibold text-[#fff3f3]">Browse AudioBookShelf</div>
+            <div className="text-xs text-[#c7a3a3]">
               Pick an item from your AudioBookShelf library
             </div>
           </div>
-          <div className="text-2xl text-[#fff3f3] transition-transform group-hover:translate-x-1">
-            -&gt;
-          </div>
+          <div className="text-lg text-[#fff3f3]">-&gt;</div>
         </button>
       </div>
     </section>

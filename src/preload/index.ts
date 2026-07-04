@@ -5,7 +5,6 @@ const electron = {
   settings: {
     get: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
     setUrl: (url: string) => ipcRenderer.invoke(IPC.SETTINGS_SET_URL, url),
-    setApiKey: (key: string) => ipcRenderer.invoke(IPC.SETTINGS_SET_API_KEY, key),
     setDefaultModel: (model: string) => ipcRenderer.invoke(IPC.SETTINGS_SET_DEFAULT_MODEL, model)
   },
 
@@ -34,7 +33,9 @@ const electron = {
   },
 
   abs: {
-    testConnection: (url: string, key: string) => ipcRenderer.invoke(IPC.ABS_TEST_CONNECTION, url, key),
+    login: (url: string, username: string, password: string) =>
+      ipcRenderer.invoke(IPC.ABS_LOGIN, url, username, password),
+    logout: () => ipcRenderer.invoke(IPC.ABS_LOGOUT),
     getLibraries: () => ipcRenderer.invoke(IPC.ABS_GET_LIBRARIES),
     getBooks: (libraryId: string) => ipcRenderer.invoke(IPC.ABS_GET_BOOKS, libraryId),
     getBook: (itemId: string) => ipcRenderer.invoke(IPC.ABS_GET_BOOK, itemId)

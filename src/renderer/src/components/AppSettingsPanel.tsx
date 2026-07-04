@@ -11,10 +11,12 @@ interface AppSettingsPanelProps {
 export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.Element {
   const { settings, setSettings } = useAppStore()
   const [url, setUrl] = useState(settings.absUrl)
-  const [apiKey, setApiKey] = useState('')
+  const [username, setUsername] = useState(settings.absUsername ?? '')
+  const [password, setPassword] = useState('')
   const [defaultModel, setDefaultModel] = useState<WhisperModel>(settings.defaultModel)
-  const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<'idle' | 'ok' | 'fail'>('idle')
+  const [signingIn, setSigningIn] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
+  const [loginResult, setLoginResult] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [storageInfo, setStorageInfo] = useState<WhisperStorageInfo | null>(null)
@@ -54,8 +56,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     }
   }, [])
 
-  const installedModelCount =
-    storageInfo?.models.filter((model) => model.downloaded).length ?? 0
+  const installedModelCount = storageInfo?.models.filter((model) => model.downloaded).length ?? 0
 
   const validateCurrentUrl = (): string | null => {
     const validation = validateAbsUrl(url)
@@ -130,30 +131,51 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     }
   }
 
-  const handleTest = async (): Promise<void> => {
-    if (!url || !apiKey) return
+  const handleSignIn = async (): Promise<void> => {
+    if (!url || !username) return
 
     const urlError = validateCurrentUrl()
     if (urlError) {
       setFormError(urlError)
-      setTestResult('fail')
       return
     }
 
-    setTesting(true)
+    setSigningIn(true)
     setFormError(null)
-    setTestResult('idle')
+    setLoginResult(null)
     try {
-      const ok = await window.electron.abs.testConnection(url, apiKey)
-      setTestResult(ok ? 'ok' : 'fail')
-      if (!ok) {
-        setFormError('Connection failed. Check the URL, protocol, and API key.')
-      }
+      const result = await window.electron.abs.login(url, username, password)
+      const validation = validateAbsUrl(url)
+      if (!validation.ok) return
+      setUsername(result.username)
+      setPassword('')
+      setLoginResult(`Signed in as ${result.username} on Audiobookshelf ${result.serverVersion}.`)
+      setSettings({
+        ...settings,
+        absUrl: validation.normalizedUrl,
+        absUsername: result.username,
+        defaultModel
+      })
     } catch (error) {
-      setTestResult('fail')
-      setFormError(error instanceof Error ? error.message : 'Connection failed.')
+      setFormError(error instanceof Error ? error.message : 'Audiobookshelf login failed.')
     } finally {
-      setTesting(false)
+      setSigningIn(false)
+    }
+  }
+
+  const handleSignOut = async (): Promise<void> => {
+    setSigningOut(true)
+    setFormError(null)
+    try {
+      await window.electron.abs.logout()
+      setUsername('')
+      setPassword('')
+      setLoginResult('Signed out of Audiobookshelf.')
+      setSettings({ ...settings, absUsername: '' })
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'Failed to sign out.')
+    } finally {
+      setSigningOut(false)
     }
   }
 
@@ -169,9 +191,6 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     try {
       await window.electron.settings.setUrl(validation.normalizedUrl)
       await window.electron.settings.setDefaultModel(defaultModel)
-      if (apiKey.trim()) {
-        await window.electron.settings.setApiKey(apiKey)
-      }
       setSettings({ ...settings, absUrl: validation.normalizedUrl, defaultModel })
       onClose()
     } catch (error) {
@@ -182,22 +201,22 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 px-4 py-6 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
       <div
         aria-labelledby="app-settings-title"
         aria-modal="true"
-        className="flex max-h-[calc(100vh-3rem)] w-full max-w-2xl flex-col overflow-hidden rounded-[30px] border border-[#442020] bg-[linear-gradient(180deg,#150808_0%,#0d0404_100%)] shadow-[0_30px_90px_rgba(0,0,0,0.55)]"
+        className="flex h-[min(680px,calc(100vh-2rem))] w-full max-w-2xl flex-col overflow-hidden rounded-[24px] border border-[#442020] bg-[linear-gradient(180deg,#150808_0%,#0d0404_100%)] shadow-[0_30px_90px_rgba(0,0,0,0.55)]"
         role="dialog"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-[#351616] px-6 py-5">
+        <div className="flex flex-none items-start justify-between gap-4 border-b border-[#351616] px-5 py-4">
           <div>
             <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#b78787]">
               Workspace Defaults
             </div>
-            <h2 id="app-settings-title" className="mt-3 text-2xl font-semibold text-[#fff4f4]">
+            <h2 id="app-settings-title" className="mt-2 text-xl font-semibold text-[#fff4f4]">
               Settings
             </h2>
-            <p className="mt-2 max-w-lg text-sm leading-6 text-[#d9b7b7]">
+            <p className="mt-1 max-w-lg text-xs leading-5 text-[#d9b7b7]">
               Keep AudioBookShelf access and the default whisper model together in one place for
               every new draft.
             </p>
@@ -212,46 +231,104 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
           </button>
         </div>
 
-        <div className="grid flex-1 gap-5 overflow-y-auto px-6 py-6">
-          <label className="grid gap-2">
-            <span className="text-sm font-medium text-[#f6e2e2]">ABS Server URL</span>
-            <input
-              className="rounded-[18px] border border-[#482020] bg-[#170909] px-4 py-3 text-sm text-[#fff4f4] outline-none transition-colors placeholder:text-[#8c5d5d] focus:border-[#dc2626]"
-              onChange={(event) => {
-                setUrl(event.target.value)
-                setFormError(null)
-                setTestResult('idle')
-              }}
-              placeholder="https://abs.example.com"
-              value={url}
-            />
-            <span className="text-xs leading-5 text-[#a87f7f]">
-              Use HTTPS for remote servers. Plain HTTP is only allowed for localhost or private-network AudioBookShelf instances.
-            </span>
-          </label>
+        <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto px-5 py-4">
+          <div className="grid gap-3 rounded-lg border border-[#341616] bg-[#120707] px-4 py-3.5">
+            <div>
+              <div className="text-sm font-medium text-[#f6e2e2]">Audiobookshelf Login</div>
+              <div className="mt-1 text-xs leading-5 text-[#a87f7f]">
+                Connect with the same account you use in Audiobookshelf.
+              </div>
+            </div>
 
-          <label className="grid gap-2">
-            <span className="text-sm font-medium text-[#f6e2e2]">API Key</span>
-            <input
-              className="rounded-[18px] border border-[#482020] bg-[#170909] px-4 py-3 text-sm text-[#fff4f4] outline-none transition-colors placeholder:text-[#8c5d5d] focus:border-[#dc2626]"
-              onChange={(event) => {
-                setApiKey(event.target.value)
-                setFormError(null)
-                setTestResult('idle')
-              }}
-              placeholder="Enter API key (leave blank to keep existing)"
-              type="password"
-              value={apiKey}
-            />
-            <span className="text-xs leading-5 text-[#a87f7f]">
-              Saved through the OS credential store. It is not written to disk as plaintext.
-            </span>
-          </label>
+            <label className="grid gap-2">
+              <span className="text-sm font-medium text-[#f6e2e2]">ABS Server URL</span>
+              <input
+                className="h-10 rounded-[14px] border border-[#482020] bg-[#170909] px-3 text-sm text-[#fff4f4] outline-none transition-colors placeholder:text-[#8c5d5d] focus:border-[#dc2626]"
+                onChange={(event) => {
+                  setUrl(event.target.value)
+                  setFormError(null)
+                  setLoginResult(null)
+                }}
+                placeholder="https://abs.example.com"
+                value={url}
+              />
+              <span className="text-xs leading-5 text-[#a87f7f]">
+                Sign-in requires HTTPS unless Audiobookshelf is running on this computer.
+              </span>
+            </label>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="grid gap-1.5">
+                <span className="text-sm font-medium text-[#f6e2e2]">Audiobookshelf Username</span>
+                <input
+                  autoComplete="username"
+                  className="h-10 min-w-0 rounded-[14px] border border-[#482020] bg-[#170909] px-3 text-sm text-[#fff4f4] outline-none transition-colors placeholder:text-[#8c5d5d] focus:border-[#dc2626]"
+                  onChange={(event) => {
+                    setUsername(event.target.value)
+                    setFormError(null)
+                    setLoginResult(null)
+                  }}
+                  placeholder="Audiobookshelf username"
+                  value={username}
+                />
+              </label>
+
+              <label className="grid gap-1.5">
+                <span className="text-sm font-medium text-[#f6e2e2]">Password</span>
+                <input
+                  autoComplete="current-password"
+                  className="h-10 min-w-0 rounded-[14px] border border-[#482020] bg-[#170909] px-3 text-sm text-[#fff4f4] outline-none transition-colors placeholder:text-[#8c5d5d] focus:border-[#dc2626]"
+                  onChange={(event) => {
+                    setPassword(event.target.value)
+                    setFormError(null)
+                    setLoginResult(null)
+                  }}
+                  placeholder="Audiobookshelf password"
+                  type="password"
+                  value={password}
+                />
+              </label>
+            </div>
+
+            <div className="stable-clamp-2 h-10 text-xs leading-5 text-[#a87f7f]">
+              Your password is sent once to your server and never stored. The returned session is
+              kept in the OS credential store.
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                className="h-9 rounded-full border border-[#5b2626] px-4 text-sm font-medium text-[#f0cbcb] transition-colors hover:border-[#dc2626] hover:text-[#fff4f4] disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={signingIn || !url || !username}
+                onClick={handleSignIn}
+                type="button"
+              >
+                {signingIn ? 'Signing In...' : 'Sign In'}
+              </button>
+              {(settings.absUsername || loginResult?.startsWith('Signed in')) && (
+                <button
+                  className="h-9 rounded-full border border-[#482020] px-4 text-sm font-medium text-[#e3bebe] transition-colors hover:border-[#dc2626] disabled:opacity-50"
+                  disabled={signingOut}
+                  onClick={handleSignOut}
+                  type="button"
+                >
+                  {signingOut ? 'Signing Out...' : 'Sign Out'}
+                </button>
+              )}
+            </div>
+
+            <div
+              className={`stable-feedback truncate text-xs leading-5 ${formError ? 'text-[#ff9f9f]' : 'text-[#9fe0bb]'}`}
+              role={formError ? 'alert' : 'status'}
+              title={formError ?? loginResult ?? undefined}
+            >
+              {formError ?? loginResult ?? '\u00A0'}
+            </div>
+          </div>
 
           <label className="grid gap-2">
             <span className="text-sm font-medium text-[#f6e2e2]">Default Whisper Model</span>
             <select
-              className="rounded-[18px] border border-[#482020] bg-[#170909] px-4 py-3 text-sm text-[#fff4f4] outline-none transition-colors focus:border-[#dc2626]"
+              className="h-10 rounded-[14px] border border-[#482020] bg-[#170909] px-3 text-sm text-[#fff4f4] outline-none transition-colors focus:border-[#dc2626]"
               onChange={(event) => setDefaultModel(event.target.value as WhisperModel)}
               value={defaultModel}
             >
@@ -321,16 +398,13 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
               </div>
             )}
 
-            {clearResult && (
-              <div className="mt-3 text-sm text-[#9fe0bb]" role="status">
-                {clearResult}
-              </div>
-            )}
-            {storageError && (
-              <div className="mt-3 text-sm leading-6 text-[#ff9f9f]" role="alert">
-                {storageError}
-              </div>
-            )}
+            <div
+              className={`stable-feedback mt-3 truncate text-xs leading-5 ${storageError ? 'text-[#ff9f9f]' : 'text-[#9fe0bb]'}`}
+              role={storageError ? 'alert' : 'status'}
+              title={storageError ?? clearResult ?? undefined}
+            >
+              {storageError ?? clearResult ?? '\u00A0'}
+            </div>
           </div>
 
           <div className="rounded-lg border border-[#341616] bg-[#120707] px-4 py-4">
@@ -350,52 +424,26 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
                 {exportingDiagnostics ? 'Exporting...' : 'Export Diagnostics'}
               </button>
             </div>
-            {diagnosticsResult && (
-              <div className="mt-3 text-sm text-[#9fe0bb]" role="status">
-                {diagnosticsResult}
-              </div>
-            )}
-            {diagnosticsError && (
-              <div className="mt-3 text-sm text-[#ff9f9f]" role="alert">
-                {diagnosticsError}
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-lg border border-[#341616] bg-[#120707] px-4 py-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <button
-                className="rounded-full border border-[#5b2626] px-4 py-2 text-sm font-medium text-[#f0cbcb] transition-colors hover:border-[#dc2626] hover:text-[#fff4f4] disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={testing || !url || !apiKey}
-                onClick={handleTest}
-                type="button"
-              >
-                {testing ? 'Testing...' : 'Test Connection'}
-              </button>
-              {testResult === 'ok' && (
-                <span className="text-sm text-[#9fe0bb]">Connected successfully</span>
-              )}
-              {testResult === 'fail' && !formError && (
-                <span className="text-sm text-[#ff9f9f]">
-                  Connection failed. Check the URL and key.
-                </span>
-              )}
+            <div
+              className={`stable-feedback mt-3 truncate text-xs leading-5 ${diagnosticsError ? 'text-[#ff9f9f]' : 'text-[#9fe0bb]'}`}
+              role={diagnosticsError ? 'alert' : 'status'}
+              title={diagnosticsError ?? diagnosticsResult ?? undefined}
+            >
+              {diagnosticsError ?? diagnosticsResult ?? '\u00A0'}
             </div>
-
-            {formError && <div className="mt-3 text-sm leading-6 text-[#ff9f9f]">{formError}</div>}
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 border-t border-[#351616] px-6 py-5">
+        <div className="flex h-[4.5rem] flex-none items-center justify-end gap-3 border-t border-[#351616] px-5">
           <button
-            className="rounded-full border border-[#482020] px-5 py-2.5 text-sm font-medium text-[#e3bebe] transition-colors hover:border-[#dc2626] hover:text-[#fff4f4]"
+            className="h-9 rounded-full border border-[#482020] px-5 text-sm font-medium text-[#e3bebe] transition-colors hover:border-[#dc2626] hover:text-[#fff4f4]"
             onClick={onClose}
             type="button"
           >
             Cancel
           </button>
           <button
-            className="rounded-full bg-[#dc2626] px-5 py-2.5 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(220,38,38,0.24)] transition-colors hover:bg-[#b91c1c] disabled:cursor-not-allowed disabled:bg-[#5f1d1d] disabled:text-[#e2b8b8]"
+            className="h-9 rounded-full bg-[#dc2626] px-5 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(220,38,38,0.22)] transition-colors hover:bg-[#b91c1c] disabled:cursor-not-allowed disabled:bg-[#5f1d1d] disabled:text-[#e2b8b8]"
             disabled={saving || !url}
             onClick={handleSave}
             type="button"

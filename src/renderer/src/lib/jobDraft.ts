@@ -2,7 +2,8 @@ import type {
   AbsBookSummary,
   AppSettings,
   TranscriptionJob,
-  WhisperModel
+  WhisperModel,
+  SubtitleFormat
 } from '../../../shared/types'
 import { getLocalSourceTitle } from './sourceTitle'
 
@@ -13,6 +14,7 @@ export interface JobDraft {
   absItems: AbsBookSummary[]
   epubPath: string | null
   model: WhisperModel
+  subtitleFormats: SubtitleFormat[]
   outputFolder: string | null
 }
 
@@ -88,6 +90,10 @@ export function buildConfirmationRows(draft: JobDraft): Array<{ label: string; v
     { label: 'Source', value: draft.source === 'abs' ? 'AudioBookShelf' : 'Local file(s)' },
     { label: 'Model', value: draft.model },
     {
+      label: 'Formats',
+      value: draft.subtitleFormats.map((format) => format.toUpperCase()).join(', ')
+    },
+    {
       label: 'Output',
       value: draft.source === 'abs' ? 'Upload to ABS automatically' : (draft.outputFolder ?? 'None')
     },
@@ -120,7 +126,8 @@ export function buildQueueJobPayloads(draft: JobDraft, settings: AppSettings): Q
         absFolderId: null,
         absAuthorName: null,
         epubPath: draft.epubPath,
-        model
+        model,
+        subtitleFormats: draft.subtitleFormats
       }
     ]
   }
@@ -137,7 +144,8 @@ export function buildQueueJobPayloads(draft: JobDraft, settings: AppSettings): Q
       absFolderId: absItem.folderId,
       absAuthorName: absItem.authorName,
       epubPath: absItem.ebookPath ?? draft.epubPath,
-      model
+      model,
+      subtitleFormats: draft.subtitleFormats
     }))
   }
 

@@ -1,6 +1,6 @@
 # Audiobook Forge
 
-![Version](https://img.shields.io/badge/version-v1.0.6-d92a3d?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-v1.1-d92a3d?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/platform-Windows-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 ![License](https://img.shields.io/badge/license-MIT-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 
@@ -61,7 +61,7 @@ Recommended install flow:
    - the unpacked zip if you want a portable folder-based run
 3. Launch Audiobook Forge.
 4. Open `Settings`.
-5. Enter your Audiobookshelf server URL and API key.
+5. Enter your Audiobookshelf server URL, username, and password, then sign in.
 6. Pick a default Whisper model.
 7. Select either local audiobook files or a book from Audiobookshelf.
 8. Queue the job and let Audiobook Forge generate the subtitles.
@@ -82,7 +82,7 @@ Portable build note:
 
 1. Open `Settings`.
 2. Enter your Audiobookshelf URL.
-3. Enter a user API key from Audiobookshelf.
+3. Sign in with your Audiobookshelf username and password.
 4. Open the Audiobookshelf browser from the source picker.
 5. Filter or sort books, especially with `No SRT first`.
 6. Select the book you want.
@@ -102,10 +102,11 @@ Portable build note:
 
 ## Security And Privacy Notes
 
-- Audiobook Forge stores the Audiobookshelf API key through the OS credential store using `keytar`
-- The API key is not written into the app settings JSON file as plaintext
+- Your Audiobookshelf password is sent to your server only during sign-in and is never stored
+- Audiobook Forge stores only the returned access and refresh tokens through the OS credential store using `keytar`
+- Authentication tokens are not written into the app settings JSON file as plaintext
 - Remote Audiobookshelf URLs should use `https://`
-- Plain `http://` is only allowed for localhost or private-network Audiobookshelf installs
+- Username/password sign-in requires `https://`, except for Audiobookshelf running on the same computer
 - Generated subtitles may be saved locally as a fallback if an Audiobookshelf upload fails
 
 ## AI Transcription Disclaimer
@@ -134,7 +135,7 @@ Audiobook Forge is built as an Electron desktop app with a React renderer and a 
 
 That pipeline is responsible for:
 
-- storing the Audiobookshelf API key in the OS credential manager
+- storing the Audiobookshelf session tokens in the OS credential manager
 - browsing Audiobookshelf libraries through Electron IPC
 - downloading Whisper binaries and model files when needed
 - preparing, segmenting, and transcribing audiobook audio
@@ -161,7 +162,7 @@ This repo includes GitHub Actions-based release automation for Windows builds:
 Release behavior:
 
 - Pushes and pull requests run validation
-- Version tags such as `v1.0.6` build Windows release assets
+- Version tags such as `v1.1` build Windows release assets
 - The release workflow uploads both the installer and the portable unpacked zip to GitHub Releases
 - Workflow dispatch can be used for manual release builds
 

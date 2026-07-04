@@ -20,7 +20,7 @@ export default function App(): React.JSX.Element {
 
   return (
     <>
-      <div className="flex h-screen w-screen overflow-hidden bg-[#070202]">
+      <div className="flex h-dvh w-screen min-w-[760px] overflow-hidden bg-[#070202]">
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden border-r border-[#2f1212] bg-[linear-gradient(180deg,#090303_0%,#050101_100%)]">
           <AppHeader />
           <JobComposer />

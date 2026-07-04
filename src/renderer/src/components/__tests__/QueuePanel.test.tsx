@@ -57,7 +57,9 @@ describe('QueuePanel', () => {
 
     expect(screen.getByText('Active Jobs')).toBeInTheDocument()
     expect(screen.queryByText('Queue')).not.toBeInTheDocument()
-    expect(screen.queryByText('Jobs in motion and recent completions stay here.')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Jobs in motion and recent completions stay here.')
+    ).not.toBeInTheDocument()
   })
 
   it('keeps finished jobs collapsed until expanded', () => {
@@ -168,6 +170,33 @@ describe('QueuePanel', () => {
     expect(screen.getByTitle('')).toHaveClass('mt-2', 'h-5')
   })
 
+  it('keeps queued and transcribing jobs in identical fixed layout slots', () => {
+    useAppStore.getState().setJobs([
+      createJob({ id: 'queued-job', title: 'Queued Book', status: 'queued' }),
+      createJob({
+        id: 'running-job',
+        title: 'Running Book',
+        status: 'running',
+        progress: {
+          jobId: 'running-job',
+          phase: 'transcribing',
+          percent: 42,
+          liveText: 'A changing live transcript preview'
+        }
+      })
+    ])
+
+    render(<QueuePanel />)
+
+    const queuedSlot = screen.getByTestId('job-progress-slot-queued-job')
+    const runningSlot = screen.getByTestId('job-progress-slot-running-job')
+
+    expect(queuedSlot).toHaveClass('h-[4.25rem]', 'overflow-hidden')
+    expect(runningSlot).toHaveClass('h-[4.25rem]', 'overflow-hidden')
+    expect(queuedSlot.closest('article')).toHaveClass('h-[11.75rem]', 'overflow-hidden')
+    expect(runningSlot.closest('article')).toHaveClass('h-[11.75rem]', 'overflow-hidden')
+  })
+
   it('shows elapsed time for the active running job', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-03-16T13:10:00Z'))
@@ -210,9 +239,9 @@ describe('QueuePanel', () => {
     const removeMock = vi.fn<typeof window.electron.queue.remove>()
     window.electron.queue.remove = removeMock
 
-    useAppStore.getState().setJobs([
-      createJob({ id: 'queued-job', title: 'Queued Book', status: 'queued' })
-    ])
+    useAppStore
+      .getState()
+      .setJobs([createJob({ id: 'queued-job', title: 'Queued Book', status: 'queued' })])
 
     render(<QueuePanel />)
 

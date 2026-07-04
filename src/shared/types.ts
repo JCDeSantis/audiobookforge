@@ -54,13 +54,7 @@ export interface WhisperStorageInfo {
 
 export interface TranscriptionQualityIssue {
   severity: 'info' | 'warning' | 'error'
-  code:
-    | 'no-cues'
-    | 'low-coverage'
-    | 'large-gap'
-    | 'long-cue'
-    | 'repeated-text'
-    | 'upload-fallback'
+  code: 'no-cues' | 'low-coverage' | 'large-gap' | 'long-cue' | 'repeated-text' | 'upload-fallback'
   message: string
   startSec?: number
   endSec?: number
@@ -102,6 +96,7 @@ export interface WhisperProgressEvent {
 // ─── Queue ───────────────────────────────────────────────────────────────────
 
 export type JobStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'cancelled'
+export type SubtitleFormat = 'srt' | 'vtt' | 'lrc'
 
 export interface TranscriptionJob {
   id: string
@@ -116,9 +111,10 @@ export interface TranscriptionJob {
   absAuthorName: string | null
   epubPath: string | null
   model: WhisperModel
+  subtitleFormats?: SubtitleFormat[]
   progress: WhisperProgressEvent | null
   srtPath: string | null // temp path during/after transcription
-  srtPaths: string[] // all saved subtitle paths for completed local fallback/output jobs
+  srtPaths: string[] // all saved subtitle-format paths for completed local fallback/output jobs
   qualityReport: TranscriptionQualityReport | null
   error: string | null
   createdAt: number
@@ -179,7 +175,14 @@ export interface AbsBookSummary {
 
 export interface AppSettings {
   absUrl: string
+  absUsername?: string
   defaultModel: WhisperModel
+}
+
+export interface AbsLoginResult {
+  username: string
+  userType: string
+  serverVersion: string
 }
 
 // ─── IPC channels ────────────────────────────────────────────────────────────
@@ -214,7 +217,8 @@ export const IPC = {
   DIAGNOSTICS_EXPORT: 'diagnostics:export',
 
   // ABS
-  ABS_TEST_CONNECTION: 'abs:test-connection',
+  ABS_LOGIN: 'abs:login',
+  ABS_LOGOUT: 'abs:logout',
   ABS_GET_LIBRARIES: 'abs:get-libraries',
   ABS_GET_BOOKS: 'abs:get-books',
   ABS_GET_BOOK: 'abs:get-book',
@@ -222,6 +226,5 @@ export const IPC = {
   // Settings
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET_URL: 'settings:set-url',
-  SETTINGS_SET_API_KEY: 'settings:set-api-key',
   SETTINGS_SET_DEFAULT_MODEL: 'settings:set-default-model'
 } as const
