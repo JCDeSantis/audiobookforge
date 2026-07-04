@@ -1,5 +1,5 @@
 import { resolve } from 'path'
-import { createDataPaths, type DataPaths } from '@core/platform/dataPaths'
+import { createDataPaths, type DataPaths } from '../core/platform/dataPaths'
 
 export interface ServerRuntimeConfig {
   host: string
@@ -8,6 +8,8 @@ export interface ServerRuntimeConfig {
   passwordFile: string | null
   password: string | null
   trustProxy: boolean
+  sessionSecretFile: string
+  webRoot: string
 }
 
 function parsePort(value: string | undefined): number {
@@ -43,6 +45,11 @@ export function loadServerRuntimeConfig(
     dataPaths: createDataPaths(dataRoot),
     passwordFile: passwordFile ? resolve(passwordFile) : null,
     password,
-    trustProxy: parseBoolean(environment.ABF_TRUST_PROXY)
+    trustProxy: parseBoolean(environment.ABF_TRUST_PROXY),
+    sessionSecretFile: resolve(
+      environment.ABF_SESSION_SECRET_FILE?.trim() ||
+        resolve(dataRoot, 'config', 'session-secret.key')
+    ),
+    webRoot: resolve(environment.ABF_WEB_ROOT?.trim() || resolve(process.cwd(), 'out', 'renderer'))
   }
 }
