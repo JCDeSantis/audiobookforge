@@ -181,6 +181,13 @@ export class ArtifactStore {
     }
   }
 
+  setExpiration(artifactId: string, expiresAt: number | null): void {
+    const artifact = this.requireArtifact(artifactId)
+    artifact.expiresAt = expiresAt
+    artifact.updatedAt = this.now()
+    this.changed()
+  }
+
   previewCleanup(selection: CleanupSelection): CleanupPreview {
     const releaseReferences = Array.from(new Set(selection.releaseReferences ?? []))
     const requestedIds = selection.artifactIds ? new Set(selection.artifactIds) : null

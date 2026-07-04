@@ -6,7 +6,13 @@ import type {
   WhisperProgressEvent,
   WhisperStorageInfo
 } from '../../../shared/types'
-import type { AbsLoginResult, ComputePreference, RuntimeCapabilities } from '../../../shared/types'
+import type {
+  AbsLoginResult,
+  ComputePreference,
+  ManagedCleanupPreview,
+  ManagedStorageSummary,
+  RuntimeCapabilities
+} from '../../../shared/types'
 
 export interface AppClient {
   runtime: {
@@ -52,6 +58,11 @@ export interface AppClient {
   }
   diagnostics: {
     export: () => Promise<string | null>
+  }
+  storage: {
+    getSummary: () => Promise<ManagedStorageSummary>
+    previewCleanup: () => Promise<ManagedCleanupPreview>
+    executeCleanup: (token: string) => Promise<{ deletedIds: string[]; failedIds: string[] }>
   }
 }
 

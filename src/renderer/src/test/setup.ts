@@ -70,6 +70,16 @@ const defaultElectronMock = {
   },
   diagnostics: {
     export: async () => null
+  },
+  storage: {
+    getSummary: async () => ({ totalBytes: 0, artifactCount: 0, byCategory: {} }),
+    previewCleanup: async () => ({
+      token: 'preview-token',
+      revision: 0,
+      artifactCount: 0,
+      sizeBytes: 0
+    }),
+    executeCleanup: async () => ({ deletedIds: [], failedIds: [] })
   }
 }
 

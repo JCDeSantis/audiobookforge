@@ -8,7 +8,12 @@ import { registerQueueIpc, setQueueWindow } from './ipc/queue.ipc'
 import { registerWhisperIpc } from './ipc/whisper.ipc'
 import { registerDiagnosticsIpc } from './ipc/diagnostics.ipc'
 import { registerRuntimeIpc } from './ipc/runtime.ipc'
+import { registerStorageIpc } from './ipc/storage.ipc'
 import { isSafeExternalUrl } from '../shared/urlSafety'
+import {
+  initializeDesktopArtifacts,
+  stopDesktopArtifactRetention
+} from './platform/desktopArtifacts'
 
 function getWindowIconPath(): string {
   if (app.isPackaged) {
@@ -105,6 +110,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   app.setName('Audiobook Forge')
+  initializeDesktopArtifacts()
 
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.audiobookforge.app')
@@ -112,6 +118,7 @@ app.whenReady().then(() => {
 
   registerSettingsIpc()
   registerRuntimeIpc()
+  registerStorageIpc()
   registerFilesIpc()
   registerAbsIpc()
   registerQueueIpc()
@@ -129,4 +136,8 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('before-quit', () => {
+  stopDesktopArtifactRetention()
 })

@@ -61,6 +61,12 @@ const electron = {
 
   diagnostics: {
     export: () => ipcRenderer.invoke(IPC.DIAGNOSTICS_EXPORT)
+  },
+
+  storage: {
+    getSummary: () => ipcRenderer.invoke(IPC.STORAGE_SUMMARY),
+    previewCleanup: () => ipcRenderer.invoke(IPC.STORAGE_CLEANUP_PREVIEW),
+    executeCleanup: (token: string) => ipcRenderer.invoke(IPC.STORAGE_CLEANUP_EXECUTE, token)
   }
 }
 

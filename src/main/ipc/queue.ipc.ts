@@ -38,6 +38,7 @@ import {
   writeVersionedJson
 } from '../../core/persistence/atomicJsonStore'
 import { getDesktopDataPaths } from '../platform/desktopDataPaths'
+import { trackDesktopManagedArtifact } from '../platform/desktopArtifacts'
 
 type QueueAddPayload = Omit<
   TranscriptionJob,
@@ -64,6 +65,7 @@ const VALID_JOB_STATUSES = new Set<TranscriptionJob['status']>([
   'cancelled'
 ])
 const QUEUE_SCHEMA_VERSION = 1
+const MANAGED_RESULT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 
 let jobs: TranscriptionJob[] = []
 let activeJobId: string | null = null
@@ -627,6 +629,13 @@ async function runNext(): Promise<void> {
           getJobSubtitleBaseName(next),
           subtitleFormats
         )
+        for (const resultPath of next.srtPaths) {
+          trackDesktopManagedArtifact(
+            resultPath,
+            'result',
+            Date.now() + MANAGED_RESULT_RETENTION_MS
+          )
+        }
         next.srtPath = next.srtPaths.find((path) => extname(path).toLowerCase() === '.srt') ?? null
         next.qualityReport = createQualityReport(parseSrtContent(mergedSrt), qualityDuration, [
           {

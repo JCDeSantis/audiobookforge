@@ -199,6 +199,19 @@ export interface ComputeStatus {
   fallbackReason: string | null
 }
 
+export interface ManagedStorageSummary {
+  totalBytes: number
+  artifactCount: number
+  byCategory: Record<string, { bytes: number; count: number }>
+}
+
+export interface ManagedCleanupPreview {
+  token: string
+  revision: number
+  artifactCount: number
+  sizeBytes: number
+}
+
 export interface AbsLoginResult {
   username: string
   userType: string
@@ -238,6 +251,11 @@ export const IPC = {
 
   // Diagnostics
   DIAGNOSTICS_EXPORT: 'diagnostics:export',
+
+  // Managed storage
+  STORAGE_SUMMARY: 'storage:summary',
+  STORAGE_CLEANUP_PREVIEW: 'storage:cleanup-preview',
+  STORAGE_CLEANUP_EXECUTE: 'storage:cleanup-execute',
 
   // ABS
   ABS_LOGIN: 'abs:login',
