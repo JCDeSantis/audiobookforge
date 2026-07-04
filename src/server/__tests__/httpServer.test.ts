@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import type { AddressInfo } from 'net'
+import { createHash } from 'crypto'
 import { createDataPaths } from '../../core/platform/dataPaths'
 import { createWebServer, type WebServerRuntime } from '../httpServer'
 import type { ServerRuntimeConfig } from '../runtimeConfig'
@@ -100,5 +101,73 @@ describe('authenticated web runtime', () => {
         })
       ).status
     ).toBe(401)
+  })
+
+  it('accepts resumable checksummed upload chunks through authenticated endpoints', async () => {
+    const login = await fetch(`${baseUrl}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: baseUrl },
+      body: JSON.stringify({ password: 'correct-password' })
+    })
+    const cookie = login.headers.get('set-cookie')!.split(';')[0]
+    const { csrfToken } = (await login.json()) as { csrfToken: string }
+    const content = Buffer.from('browser audiobook')
+    const checksum = createHash('sha256').update(content).digest('hex')
+    const headers = {
+      Cookie: cookie,
+      Origin: baseUrl,
+      'X-ABF-CSRF': csrfToken
+    }
+
+    const created = await fetch(`${baseUrl}/api/v1/uploads`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        files: [
+          {
+            name: 'book.m4b',
+            sizeBytes: content.length,
+            lastModified: 123,
+            sha256: checksum
+          }
+        ]
+      })
+    })
+    expect(created.status).toBe(201)
+    const session = (await created.json()) as { id: string; files: Array<{ id: string }> }
+    const fileId = session.files[0].id
+
+    const uploaded = await fetch(
+      `${baseUrl}/api/v1/uploads/${session.id}/files/${fileId}`,
+      {
+        method: 'PUT',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/octet-stream',
+          'Upload-Offset': '0',
+          'X-Chunk-SHA256': checksum
+        },
+        body: content
+      }
+    )
+    expect(uploaded.status).toBe(204)
+    expect(uploaded.headers.get('upload-offset')).toBe(String(content.length))
+
+    expect(
+      (
+        await fetch(`${baseUrl}/api/v1/uploads/${session.id}/files/${fileId}/finalize`, {
+          method: 'POST',
+          headers
+        })
+      ).status
+    ).toBe(200)
+    expect(
+      (
+        await fetch(`${baseUrl}/api/v1/uploads/${session.id}/finalize`, {
+          method: 'POST',
+          headers
+        })
+      ).status
+    ).toBe(200)
   })
 })

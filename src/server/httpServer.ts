@@ -11,6 +11,10 @@ import {
   type VerifiedSession
 } from './auth/sessionManager'
 import type { ServerRuntimeConfig } from './runtimeConfig'
+import { ArtifactStore } from '../core/artifacts/artifactStore'
+import { RetentionService } from '../core/artifacts/retentionService'
+import { UPLOAD_CHUNK_BYTES, UploadStore } from './uploads/uploadStore'
+import type { CreateUploadFile } from './uploads/types'
 
 const SESSION_COOKIE = 'abf_session'
 const MAX_JSON_BYTES = 16 * 1024
@@ -71,6 +75,18 @@ async function readJson(request: IncomingMessage): Promise<Record<string, unknow
     throw new Error('JSON request body must be an object.')
   }
   return parsed as Record<string, unknown>
+}
+
+async function readBuffer(request: IncomingMessage, maxBytes: number): Promise<Buffer> {
+  const chunks: Buffer[] = []
+  let bytes = 0
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+    bytes += buffer.length
+    if (bytes > maxBytes) throw new Error('Request body is too large.')
+    chunks.push(buffer)
+  }
+  return Buffer.concat(chunks)
 }
 
 function requestIsSecure(request: IncomingMessage, config: ServerRuntimeConfig): boolean {
@@ -149,6 +165,12 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
   const sessions = new SessionManager(loadOrCreateSessionSecret(config.sessionSecretFile))
   const limiter = new LoginRateLimiter()
   const events = new EventBroker()
+  const artifacts = new ArtifactStore(config.dataPaths)
+  artifacts.load()
+  const retention = new RetentionService(artifacts)
+  retention.start()
+  const uploads = new UploadStore(config.dataPaths, artifacts)
+  uploads.load()
 
   const authenticate = (request: IncomingMessage): RequestContext | null => {
     const session = sessions.verify(parseCookies(request)[SESSION_COOKIE])
@@ -219,6 +241,83 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
         return
       }
 
+      if (method === 'POST' && pathname === '/api/v1/uploads') {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const body = await readJson(request)
+        if (!Array.isArray(body.files)) throw new Error('Upload files must be an array.')
+        const session = uploads.create(body.files as CreateUploadFile[])
+        events.publish('upload.updated', session)
+        sendJson(response, 201, session)
+        return
+      }
+
+      const uploadSessionMatch = pathname.match(/^\/api\/v1\/uploads\/([a-f0-9-]+)$/i)
+      if (method === 'GET' && uploadSessionMatch) {
+        sendJson(response, 200, uploads.get(uploadSessionMatch[1]))
+        return
+      }
+
+      const uploadFileMatch = pathname.match(
+        /^\/api\/v1\/uploads\/([a-f0-9-]+)\/files\/([a-f0-9-]+)$/i
+      )
+      if (method === 'HEAD' && uploadFileMatch) {
+        const session = uploads.get(uploadFileMatch[1])
+        const file = session.files.find((entry) => entry.id === uploadFileMatch[2])
+        if (!file) throw new Error('Upload file was not found.')
+        response.statusCode = 204
+        response.setHeader('Upload-Offset', file.offset)
+        response.setHeader('Upload-Length', file.sizeBytes)
+        response.end()
+        return
+      }
+      if (method === 'PUT' && uploadFileMatch) {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const offset = Number(request.headers['upload-offset'])
+        const checksum = request.headers['x-chunk-sha256']
+        if (!Number.isSafeInteger(offset) || offset < 0 || typeof checksum !== 'string') {
+          throw new Error('Upload offset and chunk checksum headers are required.')
+        }
+        const chunk = await readBuffer(request, UPLOAD_CHUNK_BYTES)
+        const file = uploads.appendChunk(
+          uploadFileMatch[1],
+          uploadFileMatch[2],
+          offset,
+          chunk,
+          checksum
+        )
+        events.publish('upload.updated', uploads.get(uploadFileMatch[1]))
+        response.statusCode = 204
+        response.setHeader('Upload-Offset', file.offset)
+        response.end()
+        return
+      }
+
+      const finalizeFileMatch = pathname.match(
+        /^\/api\/v1\/uploads\/([a-f0-9-]+)\/files\/([a-f0-9-]+)\/finalize$/i
+      )
+      if (method === 'POST' && finalizeFileMatch) {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const file = await uploads.finalizeFile(finalizeFileMatch[1], finalizeFileMatch[2])
+        events.publish('upload.updated', uploads.get(finalizeFileMatch[1]))
+        sendJson(response, 200, file)
+        return
+      }
+
+      const finalizeSessionMatch = pathname.match(
+        /^\/api\/v1\/uploads\/([a-f0-9-]+)\/finalize$/i
+      )
+      if (method === 'POST' && finalizeSessionMatch) {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const session = uploads.finalizeSession(finalizeSessionMatch[1])
+        events.publish('upload.updated', session)
+        sendJson(response, 200, session)
+        return
+      }
+
       if (method === 'GET' && pathname === '/api/v1/events') {
         response.statusCode = 200
         response.setHeader('Content-Type', 'text/event-stream')
@@ -246,7 +345,19 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
       sendJson(response, 405, { error: 'Method not allowed.' })
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Request failed.'
-      const status = /origin|CSRF/.test(message) ? 403 : /JSON|body/.test(message) ? 400 : 500
+      const status = /origin|CSRF/.test(message)
+        ? 403
+        : /not found/.test(message)
+          ? 404
+          : /offset mismatch/.test(message)
+            ? 409
+            : /too large/.test(message)
+              ? 413
+              : /Not enough free space/.test(message)
+                ? 507
+                : /Upload|upload|checksum|files|size|JSON|body/.test(message)
+                  ? 400
+                  : 500
       sendJson(response, status, { error: message })
     }
   })
@@ -254,9 +365,11 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
   return {
     server,
     events,
-    close: () =>
-      new Promise<void>((resolveClose, reject) => {
+    close: () => {
+      retention.stop()
+      return new Promise<void>((resolveClose, reject) => {
         server.close((error) => (error ? reject(error) : resolveClose()))
       })
+    }
   }
 }

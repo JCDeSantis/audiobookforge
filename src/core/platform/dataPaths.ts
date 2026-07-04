@@ -5,6 +5,7 @@ export interface DataPaths {
   settingsFile: string
   queueFile: string
   artifactsFile: string
+  uploadSessionsFile: string
   uploadsDir: string
   resultsDir: string
   tempDir: string
@@ -20,6 +21,7 @@ export function createDataPaths(root: string): DataPaths {
     settingsFile: join(root, 'settings.json'),
     queueFile: join(root, 'queue.json'),
     artifactsFile: join(root, 'artifacts.json'),
+    uploadSessionsFile: join(root, 'upload-sessions.json'),
     uploadsDir: join(root, 'uploads'),
     resultsDir: join(root, 'results'),
     tempDir: join(root, 'temp'),
