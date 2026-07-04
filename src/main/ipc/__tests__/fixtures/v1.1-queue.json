@@ -1,0 +1,51 @@
+[
+  {
+    "id": "legacy-local-done",
+    "status": "done",
+    "source": "local",
+    "title": "Legacy Local Book",
+    "audioFiles": ["C:\\Audiobooks\\Legacy Book.m4b"],
+    "outputPath": "C:\\Subtitles",
+    "absItemId": null,
+    "absLibraryId": null,
+    "absFolderId": null,
+    "absAuthorName": null,
+    "epubPath": "C:\\Audiobooks\\Legacy Book.epub",
+    "model": "large-v3-turbo-q5_0",
+    "subtitleFormats": ["srt", "vtt"],
+    "progress": { "jobId": "legacy-local-done", "phase": "done", "percent": 100 },
+    "srtPath": "C:\\Subtitles\\Legacy Book.srt",
+    "srtPaths": [
+      "C:\\Subtitles\\Legacy Book.srt",
+      "C:\\Subtitles\\Legacy Book.vtt"
+    ],
+    "qualityReport": null,
+    "error": null,
+    "createdAt": 1710000000000,
+    "startedAt": 1710000001000,
+    "completedAt": 1710000010000
+  },
+  {
+    "id": "legacy-abs-paused",
+    "status": "paused",
+    "source": "abs",
+    "title": "Legacy ABS Book",
+    "audioFiles": [],
+    "outputPath": null,
+    "absItemId": "item-1",
+    "absLibraryId": "library-1",
+    "absFolderId": "folder-1",
+    "absAuthorName": "Example Author",
+    "epubPath": null,
+    "model": "large-v3-turbo",
+    "subtitleFormats": ["srt"],
+    "progress": null,
+    "srtPath": null,
+    "srtPaths": [],
+    "qualityReport": null,
+    "error": null,
+    "createdAt": 1710000020000,
+    "startedAt": null,
+    "completedAt": 1710000030000
+  }
+]
