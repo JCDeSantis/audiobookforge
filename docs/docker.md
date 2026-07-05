@@ -16,4 +16,6 @@ docker compose -f compose.yml -f compose.gpu.yml up --build
 
 Open `http://localhost:3000` and sign in with the configured password. Durable application data and uploaded files are kept in the `audiobookforge-data` volume.
 
-This branch is still under development. Browser upload-to-transcription wiring, Docker ABS credentials, hardware qualification, retention controls, and coordinated release publishing must pass their milestone gates before this image is considered a stable release.
+This branch is still under development. Authenticated browser uploads now feed the persistent single-worker transcription queue, results can be downloaded with range support, managed cleanup APIs are available, and Docker ABS login/browsing uses private token storage and pinned network requests.
+
+The remaining release blockers are Docker ABS audio retrieval/subtitle upload parity, remote EPUB context, resumable upload recovery after a browser restart, streamed Download All, browser end-to-end coverage, real CPU/NVIDIA image qualification, recovery/ENOSPC hardening, and coordinated release publishing. Do not treat this image as a stable release yet.

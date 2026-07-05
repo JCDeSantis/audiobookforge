@@ -27,6 +27,14 @@ Development occurs on `codex/docker-web-platform`. The application version remai
 
 Every milestone must leave Windows tests, typechecks, and the production build passing. Commits remain independently revertible and are never force-pushed.
 
+## Implementation status (2026-07-05)
+
+Completed foundations include the branch/baseline, dependency boundaries, atomic migrations, artifact ownership and retention, shared renderer client, Windows CPU/CUDA fallback, authenticated web runtime, resumable upload storage, universal-image scaffold, browser upload UI, persistent server queue, CPU/CUDA server transcription, result downloads, web settings/storage/diagnostics, and secure Docker ABS login/browsing.
+
+The current full gate is 32 test files and 122 tests, plus Node/web/server typechecks, lint, web/server production builds, and the Windows production build. Docker cannot be built or hardware-qualified on the current workstation because a Docker engine and NVIDIA container host are not available.
+
+Work still required before release candidate: finish shared checkpoint/segment behavior in the server worker; add Docker ABS audio retrieval, EPUB retrieval, and subtitle upload; finish browser-restart upload resume and Download All; complete cleanup/retention UI; harden ENOSPC, abrupt termination, ranges/backpressure, and secret redaction; run browser and Docker CPU/GPU acceptance; add coordinated release automation; and finish deployment/recovery documentation.
+
 ## Architecture
 
 - Internal package/entrypoint boundaries: shared core, renderer, desktop adapter, and server adapter. These are one repository, product, lockfile, version, and Docker image.
@@ -89,4 +97,3 @@ Every milestone must leave Windows tests, typechecks, and the production build p
 - A single tag workflow validates the tag/version, runs all tests, builds Windows assets and the Docker image, performs CPU and required NVIDIA smoke validation, generates SBOM/provenance/licenses/scans, pushes immutable image tags, and only then publishes the GitHub release and `latest`.
 - Test shared core and both client transports, v1.1 migration/recovery, Windows local/ABS behavior, CPU/CUDA/fallback behavior, Docker CPU and NVIDIA operation, remote ABS/EPUB behavior, upload interruption and corruption, cleanup races, abrupt termination, ENOSPC, authentication, streaming, and browser flows.
 - Initial Docker scope is `linux/amd64`, one image, one user, one worker, browser uploads, and no mounted-folder browser. ARM/Jetson, ROCm, Intel acceleration, and multi-user support are future work.
-
