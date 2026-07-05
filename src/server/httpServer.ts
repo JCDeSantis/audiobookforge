@@ -24,6 +24,8 @@ import { ServerTranscriber } from './transcription/serverTranscriber'
 import { isSupportedWhisperModel } from '../shared/whisperModels'
 import { WHISPER_MODELS } from '../shared/whisperModels'
 import { AppSettingsStore } from '../core/settings/appSettingsStore'
+import { ServerAbsClient } from './abs/absClient'
+import { ServerAbsSessionStore } from './abs/sessionStore'
 
 const SESSION_COOKIE = 'abf_session'
 const MAX_JSON_BYTES = 16 * 1024
@@ -206,6 +208,8 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
   const uploads = new UploadStore(config.dataPaths, artifacts)
   uploads.load()
   const settings = new AppSettingsStore(config.dataPaths.settingsFile)
+  const absClient = new ServerAbsClient()
+  const absSessions = new ServerAbsSessionStore(config.dataPaths)
   const queue = new ServerQueue(config.dataPaths, Date.now, (jobs) =>
     events.publish('queue.updated', jobs)
   )
@@ -322,6 +326,57 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
           200,
           settings.setComputePreference(body.preference as ComputePreference)
         )
+        return
+      }
+
+      if (method === 'POST' && pathname === '/api/v1/abs/login') {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const body = await readJson(request)
+        if (
+          typeof body.url !== 'string' ||
+          typeof body.username !== 'string' ||
+          typeof body.password !== 'string'
+        ) {
+          throw new Error('Enter a valid ABS URL, username, and password.')
+        }
+        const login = await absClient.login(body.url, body.username, body.password)
+        absSessions.save(login.session)
+        settings.update({ absUrl: login.session.baseUrl, absUsername: login.result.username })
+        sendJson(response, 200, login.result)
+        return
+      }
+      if (method === 'POST' && pathname === '/api/v1/abs/logout') {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        absSessions.clear()
+        settings.update({ absUsername: '' })
+        response.statusCode = 204
+        response.end()
+        return
+      }
+      if (method === 'GET' && pathname === '/api/v1/abs/libraries') {
+        const session = absSessions.load()
+        if (!session) throw new Error('Sign in to Audiobookshelf first.')
+        sendJson(response, 200, await absClient.libraries(session))
+        return
+      }
+      const absBooksMatch = pathname.match(/^\/api\/v1\/abs\/libraries\/([^/]+)\/books$/)
+      if (method === 'GET' && absBooksMatch) {
+        const session = absSessions.load()
+        if (!session) throw new Error('Sign in to Audiobookshelf first.')
+        sendJson(
+          response,
+          200,
+          await absClient.books(session, decodeURIComponent(absBooksMatch[1]))
+        )
+        return
+      }
+      const absBookMatch = pathname.match(/^\/api\/v1\/abs\/books\/([^/]+)$/)
+      if (method === 'GET' && absBookMatch) {
+        const session = absSessions.load()
+        if (!session) throw new Error('Sign in to Audiobookshelf first.')
+        sendJson(response, 200, await absClient.book(session, decodeURIComponent(absBookMatch[1])))
         return
       }
 

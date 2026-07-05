@@ -21,6 +21,13 @@ import type {
   AbsLoginResult,
   SubtitleFormat
 } from '../../shared/types'
+import {
+  mapAbsItemToBook,
+  type AbsApiItem,
+  type AbsApiLibrary
+} from '../../core/abs/mapping'
+
+export { mapAbsItemToBook } from '../../core/abs/mapping'
 
 interface AbsLoginResponse {
   user?: {
@@ -31,50 +38,6 @@ interface AbsLoginResponse {
     refreshToken?: string
   }
   serverSettings?: { version?: string }
-}
-
-interface AbsApiLibrary {
-  id: string
-  name: string
-  mediaType: string
-}
-
-interface AbsApiAudioFile {
-  index: number
-  ino: string
-  metadata: { filename: string; ext: string; path: string; relPath: string }
-  duration: number
-  mimeType: string
-  addedAt: number
-  updatedAt: number
-}
-
-interface AbsApiTrack {
-  index?: number
-  contentUrl?: string
-  metadata?: { path?: string }
-}
-
-interface AbsApiLibraryFile {
-  relPath?: string
-  metadata?: { ext?: string }
-}
-
-interface AbsApiItem {
-  id: string
-  libraryId?: string
-  folderId?: string
-  relPath?: string
-  isFile?: boolean
-  libraryFiles?: AbsApiLibraryFile[]
-  media?: {
-    metadata?: { title?: string; authorName?: string }
-    duration?: number
-    coverPath?: string
-    audioFiles?: AbsApiAudioFile[]
-    ebookFile?: { ino?: string; metadata?: { path?: string } } | null
-    tracks?: AbsApiTrack[]
-  }
 }
 
 async function getBaseUrlAndKey(): Promise<{ baseUrl: string; apiKey: string }> {
@@ -227,69 +190,6 @@ function sanitizeFileNamePart(value: string): string {
     .replace(/[. ]+$/g, '')
 
   return sanitized || 'transcript'
-}
-
-function isSubtitleFile(file: AbsApiLibraryFile): boolean {
-  const ext = (file.metadata?.ext ?? extname(file.relPath ?? '')).toLowerCase()
-  return ['.srt', '.vtt', '.lrc', '.ass', '.ssa', '.sub'].includes(ext)
-}
-
-export function mapAbsItemToBook(item: AbsApiItem, baseUrl: string): AbsBook {
-  const media = item.media ?? {}
-  const meta = media.metadata ?? {}
-  const trackContentUrlByIndex = new Map<number, string>()
-  const trackContentUrlByPath = new Map<string, string>()
-
-  for (const track of media.tracks ?? []) {
-    if (typeof track.contentUrl !== 'string' || track.contentUrl.length === 0) {
-      continue
-    }
-    if (typeof track.index === 'number') {
-      trackContentUrlByIndex.set(track.index, track.contentUrl)
-    }
-    if (typeof track.metadata?.path === 'string' && track.metadata.path.length > 0) {
-      trackContentUrlByPath.set(track.metadata.path, track.contentUrl)
-    }
-  }
-
-  const audioFiles: AbsAudioFile[] = [...(media.audioFiles ?? [])]
-    .sort((a, b) => a.index - b.index)
-    .map((file) => ({
-      index: file.index,
-      ino: file.ino,
-      contentUrl:
-        trackContentUrlByPath.get(file.metadata.path) ??
-        trackContentUrlByIndex.get(file.index) ??
-        null,
-      metadata: file.metadata,
-      duration: file.duration,
-      mimeType: file.mimeType,
-      addedAt: file.addedAt,
-      updatedAt: file.updatedAt
-    }))
-
-  const hasSubtitles = (item.libraryFiles ?? []).some(isSubtitleFile)
-  const coverPath = media.coverPath ? `${baseUrl}/api/items/${item.id}/cover` : null
-  const ebookPath = media.ebookFile?.metadata?.path ?? null
-  const ebookDownloadUrl = media.ebookFile?.ino
-    ? `${baseUrl}/api/items/${item.id}/file/${media.ebookFile.ino}/download`
-    : null
-
-  return {
-    id: item.id,
-    libraryId: item.libraryId ?? '',
-    folderId: item.folderId ?? '',
-    relPath: item.relPath ?? '',
-    isFile: item.isFile ?? false,
-    title: meta.title ?? 'Unknown',
-    authorName: meta.authorName ?? 'Unknown',
-    duration: media.duration ?? 0,
-    cover: coverPath,
-    hasSubtitles,
-    ebookPath,
-    ebookDownloadUrl,
-    audioFiles
-  }
 }
 
 export async function fetchAbsBook(
