@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import type {
   ComputePreference,
+  ManagedStorageSummary,
   WhisperModel,
   WhisperStorageInfo
 } from '../../../shared/types'
@@ -35,6 +36,10 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
   const [diagnosticsResult, setDiagnosticsResult] = useState<string | null>(null)
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null)
   const [exportingDiagnostics, setExportingDiagnostics] = useState(false)
+  const [managedStorage, setManagedStorage] = useState<ManagedStorageSummary | null>(null)
+  const [managedStorageError, setManagedStorageError] = useState<string | null>(null)
+  const [cleaningManagedStorage, setCleaningManagedStorage] = useState(false)
+  const [managedCleanupResult, setManagedCleanupResult] = useState<string | null>(null)
 
   useEffect(() => {
     let isActive = true
@@ -58,6 +63,18 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     }
 
     void loadStorageInfo()
+    void getAppClient()
+      .storage.getSummary()
+      .then((summary) => {
+        if (isActive) setManagedStorage(summary)
+      })
+      .catch((error) => {
+        if (isActive) {
+          setManagedStorageError(
+            error instanceof Error ? error.message : 'Failed to load managed storage.'
+          )
+        }
+      })
 
     return () => {
       isActive = false
@@ -65,6 +82,41 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
   }, [])
 
   const installedModelCount = storageInfo?.models.filter((model) => model.downloaded).length ?? 0
+
+  const formatBytes = (bytes: number): string => {
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+  }
+
+  const handleManagedCleanup = async (): Promise<void> => {
+    setCleaningManagedStorage(true)
+    setManagedStorageError(null)
+    setManagedCleanupResult(null)
+    try {
+      const preview = await getAppClient().storage.previewCleanup()
+      if (preview.artifactCount === 0) {
+        setManagedCleanupResult('No unreferenced managed files are available to remove.')
+        return
+      }
+      const confirmed = window.confirm(
+        `Remove ${preview.artifactCount} managed file${preview.artifactCount === 1 ? '' : 's'} using ${formatBytes(preview.sizeBytes)}? Active jobs, external Windows outputs, and ABS files are excluded.`
+      )
+      if (!confirmed) return
+      const result = await getAppClient().storage.executeCleanup(preview.token)
+      const summary = await getAppClient().storage.getSummary()
+      setManagedStorage(summary)
+      setManagedCleanupResult(
+        `Removed ${result.deletedIds.length} managed file${result.deletedIds.length === 1 ? '' : 's'}${result.failedIds.length ? `; ${result.failedIds.length} could not be removed` : ''}.`
+      )
+    } catch (error) {
+      setManagedStorageError(
+        error instanceof Error ? error.message : 'Failed to clean managed storage.'
+      )
+    } finally {
+      setCleaningManagedStorage(false)
+    }
+  }
 
   const validateCurrentUrl = (): string | null => {
     const validation = validateAbsUrl(url)
@@ -437,6 +489,46 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
               title={storageError ?? clearResult ?? undefined}
             >
               {storageError ?? clearResult ?? '\u00A0'}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-[#341616] bg-[#120707] px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="max-w-lg">
+                <div className="text-sm font-medium text-[#f6e2e2]">Managed Application Data</div>
+                <div className="mt-1 text-sm leading-6 text-[#d9b7b7]">
+                  {managedStorage
+                    ? `${managedStorage.artifactCount} managed file${managedStorage.artifactCount === 1 ? '' : 's'} using ${formatBytes(managedStorage.totalBytes)}.`
+                    : 'Checking uploads, generated results, checkpoints, and temporary data...'}
+                </div>
+                <div className="mt-1 text-xs leading-5 text-[#a87f7f]">
+                  Cleanup removes only unreferenced app-managed files. Remove finished jobs first to release their results.
+                </div>
+              </div>
+              <button
+                className="rounded-md border border-[#5b2626] px-4 py-2 text-sm font-medium text-[#f0cbcb] transition-colors hover:border-[#dc2626] hover:text-[#fff4f4] disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={cleaningManagedStorage || !managedStorage}
+                onClick={() => void handleManagedCleanup()}
+                type="button"
+              >
+                {cleaningManagedStorage ? 'Checking...' : 'Preview Cleanup'}
+              </button>
+            </div>
+            {managedStorage && Object.keys(managedStorage.byCategory).length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-[#cba6a6]">
+                {Object.entries(managedStorage.byCategory).map(([category, usage]) => (
+                  <span className="rounded-full border border-[#321717] px-2.5 py-1" key={category}>
+                    {category}: {formatBytes(usage.bytes)}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div
+              className={`stable-feedback mt-3 truncate text-xs leading-5 ${managedStorageError ? 'text-[#ff9f9f]' : 'text-[#9fe0bb]'}`}
+              role={managedStorageError ? 'alert' : 'status'}
+              title={managedStorageError ?? managedCleanupResult ?? undefined}
+            >
+              {managedStorageError ?? managedCleanupResult ?? '\u00A0'}
             </div>
           </div>
 

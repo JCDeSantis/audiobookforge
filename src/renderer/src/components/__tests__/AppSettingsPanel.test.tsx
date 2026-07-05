@@ -158,4 +158,40 @@ describe('App settings flow', () => {
     expect(within(dialog).getByText('Downloaded Whisper models cleared.')).toBeInTheDocument()
     confirmSpy.mockRestore()
   })
+
+  it('previews and removes only managed application data', async () => {
+    const getSummary = vi
+      .fn()
+      .mockResolvedValueOnce({
+        totalBytes: 3 * 1024 * 1024,
+        artifactCount: 3,
+        byCategory: { result: { bytes: 3 * 1024 * 1024, count: 3 } }
+      })
+      .mockResolvedValueOnce({ totalBytes: 0, artifactCount: 0, byCategory: {} })
+    const previewCleanup = vi.fn().mockResolvedValue({
+      token: 'cleanup-preview-token',
+      revision: 4,
+      artifactCount: 3,
+      sizeBytes: 3 * 1024 * 1024
+    })
+    const executeCleanup = vi.fn().mockResolvedValue({
+      deletedIds: ['one', 'two', 'three'],
+      failedIds: []
+    })
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    window.electron.storage = { getSummary, previewCleanup, executeCleanup }
+
+    render(<App />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Settings' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Settings' })
+    await within(dialog).findByText('3 managed files using 3.0 MB.')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Preview Cleanup' }))
+
+    await waitFor(() => {
+      expect(executeCleanup).toHaveBeenCalledWith('cleanup-preview-token')
+      expect(getSummary).toHaveBeenCalledTimes(2)
+    })
+    expect(within(dialog).getByText('Removed 3 managed files.')).toBeInTheDocument()
+    confirmSpy.mockRestore()
+  })
 })
