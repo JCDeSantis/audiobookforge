@@ -70,4 +70,51 @@ describe('server queue worker', () => {
       computeBackend: 'cpu'
     })
   })
+
+  it('prepares an ABS item through the portable adapter before transcription', async () => {
+    const queue = new ServerQueue(createDataPaths(root))
+    const job = queue.add({
+      source: 'abs',
+      title: 'ABS Book',
+      audioFiles: [],
+      outputPath: null,
+      absItemId: 'book-1',
+      absLibraryId: 'lib-1',
+      absFolderId: 'folder-1',
+      absAuthorName: 'Author',
+      epubPath: null,
+      model: 'base',
+      subtitleFormats: ['srt']
+    })
+    const uploads = { releaseFromJob: vi.fn() } as unknown as UploadStore
+    const absJobs = {
+      prepare: vi.fn(async () => ({ audioPaths: ['abs-audio.m4b'], epubPath: 'context.epub' })),
+      complete: vi.fn(async () => undefined)
+    }
+    const transcriber = {
+      transcribe: vi.fn(async () => ({
+        resultArtifactIds: ['result-1'],
+        backend: 'cpu' as const,
+        fallbackReason: null
+      }))
+    }
+    const worker = new ServerQueueWorker(queue, uploads, transcriber, absJobs)
+
+    worker.start()
+    await waitFor(() => queue.get(job.id).status === 'done')
+    worker.stop()
+
+    expect(absJobs.prepare).toHaveBeenCalledOnce()
+    expect(absJobs.complete).toHaveBeenCalledOnce()
+    expect(transcriber.transcribe).toHaveBeenCalledWith(
+      job.id,
+      job.title,
+      ['abs-audio.m4b'],
+      'base',
+      ['srt'],
+      expect.any(Function),
+      expect.any(AbortSignal),
+      'context.epub'
+    )
+  })
 })

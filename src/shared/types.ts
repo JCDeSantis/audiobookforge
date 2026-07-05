@@ -124,6 +124,7 @@ export interface TranscriptionJob {
   resultArtifactIds?: string[]
   computeBackend?: ComputeBackend
   computeFallbackReason?: string | null
+  deliveryWarning?: string | null
 }
 
 export interface WebUploadSelection {

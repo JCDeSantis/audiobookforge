@@ -11,8 +11,23 @@ interface TranscriberLike {
     model: TranscriptionJob['model'],
     formats: SubtitleFormat[],
     onProgress: (progress: Omit<WhisperProgressEvent, 'jobId'>) => void,
-    signal: AbortSignal
+    signal: AbortSignal,
+    epubPath?: string | null
   ): Promise<ServerTranscriptionResult>
+}
+
+interface AbsJobAdapterLike {
+  prepare(
+    job: TranscriptionJob,
+    onProgress: (progress: Omit<WhisperProgressEvent, 'jobId'>) => void,
+    signal: AbortSignal
+  ): Promise<{ audioPaths: string[]; epubPath: string | null }>
+  complete?(
+    job: TranscriptionJob,
+    result: ServerTranscriptionResult,
+    signal: AbortSignal
+  ): Promise<void>
+  cleanup?(job: TranscriptionJob): void
 }
 
 export class ServerQueueWorker {
@@ -23,7 +38,8 @@ export class ServerQueueWorker {
   constructor(
     private readonly queue: ServerQueue,
     private readonly uploads: UploadStore,
-    private readonly transcriber: TranscriberLike
+    private readonly transcriber: TranscriberLike,
+    private readonly absJobs?: AbsJobAdapterLike
   ) {}
 
   start(): void {
@@ -56,10 +72,17 @@ export class ServerQueueWorker {
       const controller = new AbortController()
       this.active = { jobId: job.id, controller }
       try {
-        if (job.source !== 'upload' || !job.uploadSessionId) {
-          throw new Error('This server worker currently requires a finalized browser upload.')
-        }
-        const inputs = this.uploads.getFinalizedInputs(job.uploadSessionId)
+        const inputs =
+          job.source === 'upload' && job.uploadSessionId
+            ? this.uploads.getFinalizedInputs(job.uploadSessionId)
+            : job.source === 'abs' && this.absJobs
+              ? await this.absJobs.prepare(
+                  job,
+                  (progress) => this.queue.updateProgress(job.id, progress),
+                  controller.signal
+                )
+              : null
+        if (!inputs) throw new Error('This server job has no supported input source.')
         const result = await this.transcriber.transcribe(
           job.id,
           job.title,
@@ -67,15 +90,32 @@ export class ServerQueueWorker {
           job.model,
           job.subtitleFormats ?? ['srt'],
           (progress) => this.queue.updateProgress(job.id, progress),
-          controller.signal
+          controller.signal,
+          inputs.epubPath
         )
-        this.queue.complete(job.id, result.resultArtifactIds, result.backend, result.fallbackReason)
+        let deliveryWarning: string | null = null
+        if (job.source === 'abs' && this.absJobs?.complete) {
+          try {
+            this.queue.updateProgress(job.id, { phase: 'uploading', percent: 0 })
+            await this.absJobs.complete(job, result, controller.signal)
+          } catch (error) {
+            deliveryWarning = error instanceof Error ? error.message : 'ABS subtitle upload failed.'
+          }
+        }
+        this.queue.complete(
+          job.id,
+          result.resultArtifactIds,
+          result.backend,
+          result.fallbackReason,
+          deliveryWarning
+        )
       } catch (error) {
         const current = this.queue.get(job.id)
         if (current.status === 'running') {
           this.queue.fail(job.id, error instanceof Error ? error.message : 'Transcription failed.')
         }
       } finally {
+        if (job.source === 'abs') this.absJobs?.cleanup?.(job)
         const finished = this.queue.get(job.id)
         if (
           finished.uploadSessionId &&

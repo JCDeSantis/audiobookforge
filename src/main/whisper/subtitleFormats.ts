@@ -1,1 +1,5 @@
-export { convertSrtToFormat, getSubtitleMimeType } from '../../shared/subtitleFormats'
+export {
+  convertSrtToFormat,
+  getSubtitleMimeType,
+  splitSrtByDurations
+} from '../../shared/subtitleFormats'

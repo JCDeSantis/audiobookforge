@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, createWrite
 import { join, basename, extname, isAbsolute } from 'path'
 import axios from 'axios'
 import { v4 as uuidv4 } from 'uuid'
-import Epub from 'epub2'
+import { extractEpubVocabulary } from '../../core/context/epubVocabulary'
 import {
   cancelTranscription,
   clearTranscriptionCheckpoint,
@@ -374,22 +374,7 @@ async function saveMultipartLocalSubtitles(
 }
 
 export async function extractEpubVocab(epubPath: string): Promise<string> {
-  try {
-    const epub = await Epub.createAsync(epubPath)
-    const chapters = await Promise.all(epub.flow.map((chapter) => epub.getChapterAsync(chapter.id)))
-    const allText = chapters.join(' ')
-    const text = allText.replace(/<[^>]+>/g, ' ')
-    const words = new Set<string>()
-
-    for (const match of text.matchAll(/\b([A-Z][a-zA-Z]{5,})\b/g)) {
-      words.add(match[1])
-      if (words.size >= 150) break
-    }
-
-    return Array.from(words).join(', ')
-  } catch {
-    return ''
-  }
+  return extractEpubVocabulary(epubPath)
 }
 
 async function resolveAbsAudioPaths(job: TranscriptionJob): Promise<{

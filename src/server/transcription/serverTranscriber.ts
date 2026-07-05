@@ -14,6 +14,7 @@ import type {
 import { classifyCudaFailure } from '../../shared/computeFallback'
 import { convertSrtToFormat } from '../../shared/subtitleFormats'
 import { ServerModelStore } from './modelStore'
+import { extractEpubVocabulary } from '../../core/context/epubVocabulary'
 
 interface ProcessResult {
   code: number | null
@@ -64,7 +65,8 @@ export class ServerTranscriber {
     model: WhisperModel,
     formats: SubtitleFormat[],
     onProgress: (progress: Omit<WhisperProgressEvent, 'jobId'>) => void,
-    signal: AbortSignal
+    signal: AbortSignal,
+    epubPath: string | null = null
   ): Promise<ServerTranscriptionResult> {
     if (audioPaths.length === 0) throw new Error('No uploaded audio files were available.')
     const jobTemp = join(this.paths.tempDir, jobId)
@@ -115,6 +117,7 @@ export class ServerTranscriber {
       onProgress({ phase: 'preparing', percent: 100 })
 
       const outputBase = join(jobTemp, 'transcript')
+      const promptText = epubPath ? await extractEpubVocabulary(epubPath) : ''
       let backend: ComputeBackend =
         this.getComputePreference() === 'cpu'
           ? 'cpu'
@@ -129,7 +132,8 @@ export class ServerTranscriber {
         outputBase,
         backend,
         onProgress,
-        signal
+        signal,
+        promptText
       )
       if (whisperResult.code !== 0 && backend === 'cuda') {
         fallbackReason = classifyCudaFailure(whisperResult.code, whisperResult.stderr)
@@ -148,7 +152,8 @@ export class ServerTranscriber {
             outputBase,
             'cpu',
             onProgress,
-            signal
+            signal,
+            promptText
           )
         }
       }
@@ -194,7 +199,8 @@ export class ServerTranscriber {
     outputBase: string,
     backend: 'cpu' | 'cuda',
     onProgress: (progress: Omit<WhisperProgressEvent, 'jobId'>) => void,
-    signal: AbortSignal
+    signal: AbortSignal,
+    promptText = ''
   ): Promise<ProcessResult> {
     if (!existsSync(executable)) throw new Error(`Whisper ${backend} executable is unavailable.`)
     const args = [
@@ -211,6 +217,7 @@ export class ServerTranscriber {
       '-t',
       String(Math.max(1, Math.min(cpus().length, 8)))
     ]
+    if (promptText) args.push('--prompt', promptText)
     if (backend === 'cpu') args.push('--no-gpu')
     return this.run(executable, args, signal, (stderr) => {
       const match = stderr.match(/progress\s*=\s*(\d+)%/)

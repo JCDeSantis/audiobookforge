@@ -26,6 +26,7 @@ import { WHISPER_MODELS } from '../shared/whisperModels'
 import { AppSettingsStore } from '../core/settings/appSettingsStore'
 import { ServerAbsClient } from './abs/absClient'
 import { ServerAbsSessionStore } from './abs/sessionStore'
+import { ServerAbsJobAdapter } from './abs/absJobAdapter'
 
 const SESSION_COOKIE = 'abf_session'
 const MAX_JSON_BYTES = 16 * 1024
@@ -210,6 +211,7 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
   const settings = new AppSettingsStore(config.dataPaths.settingsFile)
   const absClient = new ServerAbsClient()
   const absSessions = new ServerAbsSessionStore(config.dataPaths)
+  const absJobs = new ServerAbsJobAdapter(config.dataPaths, absSessions, absClient, artifacts)
   const queue = new ServerQueue(config.dataPaths, Date.now, (jobs) =>
     events.publish('queue.updated', jobs)
   )
@@ -222,7 +224,7 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
     config,
     () => settings.load().computePreference ?? 'automatic'
   )
-  const worker = new ServerQueueWorker(queue, uploads, transcriber)
+  const worker = new ServerQueueWorker(queue, uploads, transcriber, absJobs)
   worker.start()
 
   const authenticate = (request: IncomingMessage): RequestContext | null => {

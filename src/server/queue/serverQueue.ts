@@ -102,7 +102,8 @@ export class ServerQueue {
     jobId: string,
     resultArtifactIds: string[],
     backend: ComputeBackend,
-    fallbackReason: string | null
+    fallbackReason: string | null,
+    deliveryWarning: string | null = null
   ): void {
     const job = this.requireJob(jobId)
     if (job.status !== 'running') return
@@ -111,6 +112,7 @@ export class ServerQueue {
     job.resultArtifactIds = [...resultArtifactIds]
     job.computeBackend = backend
     job.computeFallbackReason = fallbackReason
+    job.deliveryWarning = deliveryWarning
     job.completedAt = this.now()
     this.commit()
   }

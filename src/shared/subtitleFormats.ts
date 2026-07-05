@@ -27,6 +27,34 @@ function parseSrt(srt: string): Cue[] {
     .filter((cue): cue is Cue => cue !== null)
 }
 
+function srtTimestamp(seconds: number): string {
+  return vttTimestamp(seconds).replace('.', ',')
+}
+
+export function splitSrtByDurations(srt: string, durations: number[]): string[] {
+  const cues = parseSrt(srt)
+  let offset = 0
+  return durations.map((duration) => {
+    const start = offset
+    const end = start + Math.max(0, duration)
+    offset = end
+    const part = cues.flatMap((cue) => {
+      const overlapStart = Math.max(cue.startSec, start)
+      const overlapEnd = Math.min(cue.endSec, end)
+      return overlapEnd > overlapStart
+        ? [{ startSec: overlapStart - start, endSec: overlapEnd - start, text: cue.text }]
+        : []
+    })
+    return part
+      .map(
+        (cue, index) =>
+          `${index + 1}\n${srtTimestamp(cue.startSec)} --> ${srtTimestamp(cue.endSec)}\n${cue.text}`
+      )
+      .join('\n\n')
+      .concat(part.length ? '\n' : '')
+  })
+}
+
 function vttTimestamp(seconds: number): string {
   const milliseconds = Math.max(0, Math.round(seconds * 1000))
   const hours = Math.floor(milliseconds / 3_600_000)

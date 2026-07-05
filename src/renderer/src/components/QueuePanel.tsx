@@ -255,8 +255,17 @@ function JobCard({
         </button>
       )}
 
-      {job.status === 'done' && savedPaths.length === 0 && job.source === 'abs' && (
+      {job.status === 'done' &&
+        savedPaths.length === 0 &&
+        job.source === 'abs' &&
+        !job.resultArtifactIds?.length && (
         <div className="mt-3 text-xs text-[#97d8ad]">Uploaded to AudioBookShelf</div>
+      )}
+
+      {job.status === 'done' && job.source === 'abs' && job.deliveryWarning && (
+        <div className="mt-2 truncate text-xs text-[#f6c76a]" title={job.deliveryWarning}>
+          ABS upload fallback — download results below
+        </div>
       )}
 
       <div className={`${quiet ? 'mt-3' : 'mt-2'} flex h-8 items-center gap-2 text-xs`}>
@@ -268,7 +277,7 @@ function JobCard({
 
         <div className="ml-auto flex min-w-0 flex-nowrap justify-end gap-1.5">
           {job.status === 'done' &&
-            job.source === 'upload' &&
+            (job.source === 'upload' || job.source === 'abs') &&
             job.resultArtifactIds?.map((artifactId, index) => (
               <button
                 key={artifactId}
