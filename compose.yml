@@ -1,0 +1,22 @@
+services:
+  audiobookforge:
+    image: ghcr.io/jcdesantis/audiobookforge:${ABF_VERSION:-dev}
+    build:
+      context: .
+    restart: unless-stopped
+    ports:
+      - "${ABF_PORT:-3000}:3000"
+    environment:
+      ABF_WEB_PASSWORD_FILE: /run/secrets/abf_web_password
+      ABF_TRUST_PROXY: "${ABF_TRUST_PROXY:-false}"
+    secrets:
+      - abf_web_password
+    volumes:
+      - audiobookforge-data:/data
+
+secrets:
+  abf_web_password:
+    file: ${ABF_WEB_PASSWORD_FILE_PATH:-./secrets/web_password.txt}
+
+volumes:
+  audiobookforge-data:
