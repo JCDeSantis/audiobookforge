@@ -120,7 +120,7 @@ export function SourceSelector(): React.JSX.Element {
             </div>
             <div className="text-xs text-[#c7a3a3]">
               {uploadPercent === null
-                ? 'Pick one or more `.m4b` or `.mp3` files and an optional `.epub`'
+                ? 'Pick `.m4b`/`.mp3` files and optional `.epub`; reselect matching files to resume'
                 : `Uploading… ${uploadPercent}%`}
             </div>
           </div>

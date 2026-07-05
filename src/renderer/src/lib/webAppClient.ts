@@ -18,6 +18,33 @@ const DEFAULT_SETTINGS: AppSettings = {
   computePreference: 'automatic'
 }
 
+const PENDING_UPLOAD_KEY = 'audiobookforge.pending-upload.v1'
+
+interface PendingUpload {
+  sessionId: string
+  files: Array<{ name: string; sizeBytes: number; lastModified: number }>
+}
+
+function selectedFileIdentity(files: File[]): PendingUpload['files'] {
+  return files.map((file) => ({
+    name: file.name,
+    sizeBytes: file.size,
+    lastModified: file.lastModified
+  }))
+}
+
+function matchingIdentity(left: PendingUpload['files'], right: PendingUpload['files']): boolean {
+  return (
+    left.length === right.length &&
+    left.every(
+      (file, index) =>
+        file.name === right[index].name &&
+        file.sizeBytes === right[index].sizeBytes &&
+        file.lastModified === right[index].lastModified
+    )
+  )
+}
+
 export class WebAppClient implements AppClient {
   private csrfToken: string | null = null
 
@@ -99,26 +126,66 @@ export class WebAppClient implements AppClient {
       onProgress: (percent: number) => void
     ): Promise<WebUploadSelection> => {
       if (files.length === 0) throw new Error('Select at least one audiobook file.')
-      const session = await this.request<{
+      type RemoteSession = {
         id: string
-        files: Array<{ id: string; name: string; sizeBytes: number; offset: number; kind: string }>
-      }>('/api/v1/uploads', {
-        method: 'POST',
-        body: JSON.stringify({
-          files: files.map((file) => ({
-            name: file.name,
-            sizeBytes: file.size,
-            lastModified: file.lastModified
-          }))
+        state: string
+        files: Array<{
+          id: string
+          name: string
+          sizeBytes: number
+          offset: number
+          kind: string
+          state: string
+        }>
+      }
+      const identity = selectedFileIdentity(files)
+      let session: RemoteSession | null = null
+      try {
+        const pending = JSON.parse(localStorage.getItem(PENDING_UPLOAD_KEY) ?? 'null') as PendingUpload | null
+        if (pending && matchingIdentity(pending.files, identity)) {
+          const candidate = await this.request<RemoteSession>(`/api/v1/uploads/${pending.sessionId}`)
+          if (candidate.state === 'open') session = candidate
+        }
+      } catch {
+        localStorage.removeItem(PENDING_UPLOAD_KEY)
+      }
+      if (!session) {
+        session = await this.request<RemoteSession>('/api/v1/uploads', {
+          method: 'POST',
+          body: JSON.stringify({ files: identity })
         })
-      })
+        localStorage.setItem(
+          PENDING_UPLOAD_KEY,
+          JSON.stringify({ sessionId: session.id, files: identity } satisfies PendingUpload)
+        )
+      }
       const totalBytes = files.reduce((total, file) => total + file.size, 0)
       let uploadedBytes = 0
 
-      for (const localFile of files) {
-        const remoteFile = session.files.find((entry) => entry.name === localFile.name)
+      for (const [fileIndex, localFile] of files.entries()) {
+        const remoteFile = session.files[fileIndex]
         if (!remoteFile) throw new Error(`Upload session did not accept ${localFile.name}.`)
-        let offset = remoteFile.offset
+        if (
+          remoteFile.name !== localFile.name ||
+          remoteFile.sizeBytes !== localFile.size
+        ) {
+          throw new Error('Reselected files do not match the pending upload session.')
+        }
+        if (remoteFile.state === 'finalized') {
+          uploadedBytes += localFile.size
+          onProgress(Math.min(99, Math.round((uploadedBytes / totalBytes) * 100)))
+          continue
+        }
+        const offsetResponse = await fetch(
+          `/api/v1/uploads/${session.id}/files/${remoteFile.id}`,
+          { method: 'HEAD', credentials: 'same-origin' }
+        )
+        if (!offsetResponse.ok) throw new Error('Could not inspect the pending upload offset.')
+        let offset = Number(offsetResponse.headers.get('Upload-Offset'))
+        if (!Number.isSafeInteger(offset) || offset < 0 || offset > localFile.size) {
+          throw new Error('The server returned an invalid upload offset.')
+        }
+        uploadedBytes += offset
         while (offset < localFile.size) {
           const chunk = localFile.slice(offset, Math.min(offset + 16 * 1024 * 1024, localFile.size))
           const bytes = await chunk.arrayBuffer()
@@ -158,6 +225,7 @@ export class WebAppClient implements AppClient {
       }
 
       await this.request(`/api/v1/uploads/${session.id}/finalize`, { method: 'POST' })
+      localStorage.removeItem(PENDING_UPLOAD_KEY)
       onProgress(100)
       return {
         sessionId: session.id,
