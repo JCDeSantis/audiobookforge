@@ -6,6 +6,7 @@ import type { DataPaths } from '../../core/platform/dataPaths'
 import { ArtifactStore } from '../../core/artifacts/artifactStore'
 import type {
   ComputeBackend,
+  ComputePreference,
   SubtitleFormat,
   WhisperModel,
   WhisperProgressEvent
@@ -48,7 +49,8 @@ export class ServerTranscriber {
     private readonly paths: DataPaths,
     private readonly artifacts: ArtifactStore,
     private readonly models: ServerModelStore,
-    private readonly config: ServerTranscriberConfig
+    private readonly config: ServerTranscriberConfig,
+    private readonly getComputePreference: () => ComputePreference = () => 'automatic'
   ) {}
 
   cancel(): void {
@@ -70,12 +72,14 @@ export class ServerTranscriber {
     mkdirSync(jobTemp, { recursive: true })
     mkdirSync(resultDir, { recursive: true })
 
+    let releaseModelLease: (() => void) | null = null
     try {
       const modelPath = await this.models.ensure(
         model,
         (percent) => onProgress({ phase: 'downloading-model', percent }),
         signal
       )
+      releaseModelLease = this.models.acquireLease(model, `transcription:${jobId}`)
       const listPath = join(jobTemp, 'inputs.txt')
       const wavPath = join(jobTemp, 'audio.wav')
       writeFileSync(
@@ -111,7 +115,12 @@ export class ServerTranscriber {
       onProgress({ phase: 'preparing', percent: 100 })
 
       const outputBase = join(jobTemp, 'transcript')
-      let backend: ComputeBackend = (await this.cudaAvailable(signal)) ? 'cuda' : 'cpu'
+      let backend: ComputeBackend =
+        this.getComputePreference() === 'cpu'
+          ? 'cpu'
+          : (await this.cudaAvailable(signal))
+            ? 'cuda'
+            : 'cpu'
       let fallbackReason: string | null = null
       let whisperResult = await this.runWhisper(
         backend === 'cuda' ? this.config.whisperCudaPath : this.config.whisperCpuPath,
@@ -166,6 +175,7 @@ export class ServerTranscriber {
       onProgress({ phase: 'done', percent: 100 })
       return { resultArtifactIds, backend, fallbackReason }
     } finally {
+      releaseModelLease?.()
       rmSync(jobTemp, { recursive: true, force: true })
       this.activeProcess = null
     }

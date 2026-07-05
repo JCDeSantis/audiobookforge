@@ -173,4 +173,54 @@ describe('authenticated web runtime', () => {
       ).status
     ).toBe(200)
   })
+
+  it('persists web settings and exposes cleanup and redacted diagnostics', async () => {
+    const login = await fetch(`${baseUrl}/api/v1/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: baseUrl },
+      body: JSON.stringify({ password: 'correct-password' })
+    })
+    const cookie = login.headers.get('set-cookie')!.split(';')[0]
+    const { csrfToken } = (await login.json()) as { csrfToken: string }
+    const headers = {
+      Cookie: cookie,
+      Origin: baseUrl,
+      'X-ABF-CSRF': csrfToken,
+      'Content-Type': 'application/json'
+    }
+
+    const updated = await fetch(`${baseUrl}/api/v1/settings/compute-preference`, {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify({ preference: 'cpu' })
+    })
+    expect(updated.status).toBe(200)
+    await expect(
+      fetch(`${baseUrl}/api/v1/settings`, { headers: { Cookie: cookie } }).then((response) =>
+        response.json()
+      )
+    ).resolves.toMatchObject({ computePreference: 'cpu' })
+
+    const previewResponse = await fetch(`${baseUrl}/api/v1/storage/cleanup-preview`, {
+      method: 'POST',
+      headers
+    })
+    expect(previewResponse.status).toBe(200)
+    const preview = (await previewResponse.json()) as { token: string; artifactCount: number }
+    expect(preview.artifactCount).toBe(0)
+    const cleanup = await fetch(`${baseUrl}/api/v1/storage/cleanup`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ token: preview.token })
+    })
+    expect(cleanup.status).toBe(200)
+
+    const diagnostics = await fetch(`${baseUrl}/api/v1/diagnostics`, {
+      headers: { Cookie: cookie }
+    })
+    expect(diagnostics.status).toBe(200)
+    const text = await diagnostics.text()
+    expect(text).toContain('"computePreference": "cpu"')
+    expect(text).not.toContain('correct-password')
+  })
 })

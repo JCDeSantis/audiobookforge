@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto'
 import { createReadStream, existsSync, statSync } from 'fs'
 import { basename, extname, join, normalize, relative, resolve } from 'path'
 import type { RuntimeCapabilities } from '../shared/types'
+import type { ComputePreference, ManagedStorageSummary, WhisperModel } from '../shared/types'
 import { EventBroker } from './events/eventBroker'
 import { LoginRateLimiter } from './http/rateLimiter'
 import { loadConfiguredPassword, verifyPassword } from './auth/passwordVerifier'
@@ -21,6 +22,8 @@ import { ServerQueueWorker } from './queue/serverQueueWorker'
 import { ServerModelStore } from './transcription/modelStore'
 import { ServerTranscriber } from './transcription/serverTranscriber'
 import { isSupportedWhisperModel } from '../shared/whisperModels'
+import { WHISPER_MODELS } from '../shared/whisperModels'
+import { AppSettingsStore } from '../core/settings/appSettingsStore'
 
 const SESSION_COOKIE = 'abf_session'
 const MAX_JSON_BYTES = 16 * 1024
@@ -171,6 +174,20 @@ function releaseJobArtifacts(
   if (job.uploadSessionId) uploads.releaseFromJob(job.uploadSessionId, job.id)
 }
 
+function summarizeStorage(artifacts: ArtifactStore): ManagedStorageSummary {
+  const byCategory: ManagedStorageSummary['byCategory'] = {}
+  let totalBytes = 0
+  const active = artifacts.list().filter((artifact) => artifact.state === 'active')
+  for (const artifact of active) {
+    totalBytes += artifact.sizeBytes
+    const category = byCategory[artifact.category] ?? { bytes: 0, count: 0 }
+    category.bytes += artifact.sizeBytes
+    category.count += 1
+    byCategory[artifact.category] = category
+  }
+  return { totalBytes, artifactCount: active.length, byCategory }
+}
+
 export interface WebServerRuntime {
   server: Server
   events: EventBroker
@@ -188,12 +205,19 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
   retention.start()
   const uploads = new UploadStore(config.dataPaths, artifacts)
   uploads.load()
+  const settings = new AppSettingsStore(config.dataPaths.settingsFile)
   const queue = new ServerQueue(config.dataPaths, Date.now, (jobs) =>
     events.publish('queue.updated', jobs)
   )
   queue.load()
   const models = new ServerModelStore(config.dataPaths, artifacts)
-  const transcriber = new ServerTranscriber(config.dataPaths, artifacts, models, config)
+  const transcriber = new ServerTranscriber(
+    config.dataPaths,
+    artifacts,
+    models,
+    config,
+    () => settings.load().computePreference ?? 'automatic'
+  )
   const worker = new ServerQueueWorker(queue, uploads, transcriber)
   worker.start()
 
@@ -263,6 +287,147 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
 
       if (method === 'GET' && pathname === '/api/v1/capabilities') {
         sendJson(response, 200, WEB_CAPABILITIES)
+        return
+      }
+
+      if (method === 'GET' && pathname === '/api/v1/settings') {
+        sendJson(response, 200, settings.load())
+        return
+      }
+      if (method === 'PUT' && pathname === '/api/v1/settings/abs-url') {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const body = await readJson(request)
+        if (typeof body.url !== 'string') throw new Error('ABS URL must be a string.')
+        sendJson(response, 200, settings.setUrl(body.url))
+        return
+      }
+      if (method === 'PUT' && pathname === '/api/v1/settings/default-model') {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const body = await readJson(request)
+        if (!isSupportedWhisperModel(body.model)) throw new Error('Unsupported Whisper model.')
+        sendJson(response, 200, settings.setDefaultModel(body.model))
+        return
+      }
+      if (method === 'PUT' && pathname === '/api/v1/settings/compute-preference') {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const body = await readJson(request)
+        if (body.preference !== 'automatic' && body.preference !== 'cpu') {
+          throw new Error('Unsupported compute preference.')
+        }
+        sendJson(
+          response,
+          200,
+          settings.setComputePreference(body.preference as ComputePreference)
+        )
+        return
+      }
+
+      if (method === 'GET' && pathname === '/api/v1/storage') {
+        sendJson(response, 200, summarizeStorage(artifacts))
+        return
+      }
+      if (method === 'POST' && pathname === '/api/v1/storage/cleanup-preview') {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const preview = artifacts.previewCleanup({
+          categories: ['upload-source', 'result', 'checkpoint', 'temporary', 'log']
+        })
+        sendJson(response, 200, {
+          token: preview.token,
+          revision: preview.revision,
+          artifactCount: preview.artifactCount,
+          sizeBytes: preview.sizeBytes
+        })
+        return
+      }
+      if (method === 'POST' && pathname === '/api/v1/storage/cleanup') {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const body = await readJson(request)
+        if (typeof body.token !== 'string' || body.token.length < 10) {
+          throw new Error('A valid cleanup preview token is required.')
+        }
+        sendJson(response, 200, artifacts.executeCleanup(body.token))
+        return
+      }
+
+      if (method === 'GET' && pathname === '/api/v1/whisper/storage') {
+        const gpuDetected =
+          existsSync('/proc/driver/nvidia/version') ||
+          (!!process.env.NVIDIA_VISIBLE_DEVICES && process.env.NVIDIA_VISIBLE_DEVICES !== 'void')
+        sendJson(response, 200, {
+          binaryReady: existsSync(config.whisperCpuPath),
+          binaryVersion: 'docker-bundled',
+          gpuEnabled: existsSync(config.whisperCudaPath),
+          gpuDetected,
+          modelDir: config.dataPaths.modelsDir,
+          binaryDir: config.dataPaths.binariesDir,
+          models: WHISPER_MODELS.map((model) => {
+            const path = models.modelPath(model.id)
+            const downloaded = models.isReady(model.id)
+            const stats = downloaded ? statSync(path) : null
+            return {
+              ...model,
+              diskBytes: stats?.size ?? 0,
+              downloaded,
+              lastModified: stats?.mtimeMs ?? null
+            }
+          })
+        })
+        return
+      }
+      if (method === 'DELETE' && pathname === '/api/v1/whisper/models') {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const result = models.clear()
+        if (result.inUse.length > 0) throw new Error('One or more Whisper models are in use.')
+        sendJson(response, 200, result)
+        return
+      }
+      const modelDeleteMatch = pathname.match(/^\/api\/v1\/whisper\/models\/([^/]+)$/)
+      if (method === 'DELETE' && modelDeleteMatch) {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const model = decodeURIComponent(modelDeleteMatch[1])
+        if (!isSupportedWhisperModel(model)) throw new Error('Unsupported Whisper model.')
+        if (!models.delete(model as WhisperModel)) throw new Error('Whisper model is in use.')
+        response.statusCode = 204
+        response.end()
+        return
+      }
+
+      if (method === 'GET' && pathname === '/api/v1/diagnostics') {
+        const body = JSON.stringify(
+          {
+            generatedAt: new Date().toISOString(),
+            platform: process.platform,
+            architecture: process.arch,
+            node: process.version,
+            computePreference: settings.load().computePreference ?? 'automatic',
+            cpuBinaryReady: existsSync(config.whisperCpuPath),
+            cudaBinaryReady: existsSync(config.whisperCudaPath),
+            storage: summarizeStorage(artifacts),
+            jobs: queue.list().map((job) => ({
+              id: job.id,
+              status: job.status,
+              source: job.source,
+              model: job.model,
+              computeBackend: job.computeBackend ?? 'unknown',
+              computeFallbackReason: job.computeFallbackReason ?? null,
+              error: job.error
+            }))
+          },
+          null,
+          2
+        )
+        response.statusCode = 200
+        response.setHeader('Content-Type', 'application/json; charset=utf-8')
+        response.setHeader('Content-Disposition', 'attachment; filename="audiobookforge-diagnostics.json"')
+        response.setHeader('Content-Length', Buffer.byteLength(body))
+        response.end(body)
         return
       }
 

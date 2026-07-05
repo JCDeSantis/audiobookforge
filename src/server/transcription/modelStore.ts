@@ -44,7 +44,10 @@ export class ServerModelStore {
     signal: AbortSignal
   ): Promise<string> {
     const path = this.modelPath(model)
-    if (this.isReady(model)) return path
+    if (this.isReady(model)) {
+      this.registerIfNeeded(path)
+      return path
+    }
     const info = WHISPER_MODELS.find((entry) => entry.id === model)!
     mkdirSync(this.paths.modelsDir, { recursive: true })
     const partialPath = `${path}.partial`
@@ -53,6 +56,7 @@ export class ServerModelStore {
     if (!response.ok || !response.body) throw new Error(`Model download failed (${response.status}).`)
     const descriptor = openSync(partialPath, 'wx')
     let downloaded = 0
+    let downloadError: unknown = null
     try {
       const reader = response.body.getReader()
       while (true) {
@@ -64,20 +68,62 @@ export class ServerModelStore {
       }
       fsyncSync(descriptor)
     } catch (error) {
-      rmSync(partialPath, { force: true })
-      throw error
+      downloadError = error
     } finally {
       closeSync(descriptor)
+    }
+    if (downloadError) {
+      rmSync(partialPath, { force: true })
+      throw downloadError
     }
     if (!isWhisperModelSizeAcceptable(statSync(partialPath).size, info.sizeBytes)) {
       rmSync(partialPath, { force: true })
       throw new Error('Downloaded Whisper model size did not match the expected size.')
     }
     renameSync(partialPath, path)
-    if (!this.artifacts.list().some((artifact) => artifact.path === path)) {
-      this.artifacts.register({ category: 'model', path, sizeBytes: statSync(path).size })
-    }
+    this.registerIfNeeded(path)
     onProgress(100)
     return path
+  }
+
+  acquireLease(model: WhisperModel, leaseId: string): () => void {
+    const path = this.modelPath(model)
+    const artifactId = this.registerIfNeeded(path)
+    this.artifacts.acquireLease(artifactId, leaseId)
+    return () => this.artifacts.releaseLease(artifactId, leaseId)
+  }
+
+  delete(model: WhisperModel): boolean {
+    const path = this.modelPath(model)
+    const artifact = this.artifacts.list().find((entry) => entry.path === path)
+    if (!artifact) {
+      rmSync(path, { force: true })
+      return true
+    }
+    const preview = this.artifacts.previewCleanup({ artifactIds: [artifact.id] })
+    if (preview.artifactCount === 0) return false
+    return this.artifacts.executeCleanup(preview.token).deletedIds.includes(artifact.id)
+  }
+
+  clear(): { deleted: WhisperModel[]; inUse: WhisperModel[] } {
+    const deleted: WhisperModel[] = []
+    const inUse: WhisperModel[] = []
+    for (const model of WHISPER_MODELS.map((entry) => entry.id)) {
+      if (!this.isReady(model)) continue
+      if (this.delete(model)) deleted.push(model)
+      else inUse.push(model)
+    }
+    return { deleted, inUse }
+  }
+
+  private registerIfNeeded(path: string): string {
+    const existing = this.artifacts.list().find((artifact) => artifact.path === path)
+    if (existing) return existing.id
+    if (!existsSync(path)) throw new Error('Whisper model is unavailable.')
+    return this.artifacts.register({
+      category: 'model',
+      path,
+      sizeBytes: statSync(path).size
+    }).id
   }
 }

@@ -1,85 +1,23 @@
 import { ipcMain } from 'electron'
-import { existsSync } from 'fs'
 import keytar from 'keytar'
-import { WHISPER_MODELS } from '../whisper/models'
 import { IPC } from '../../shared/types'
-import { validateAbsUrl } from '../../shared/urlSafety'
 import type { AppSettings, ComputePreference, WhisperModel } from '../../shared/types'
-import { readVersionedJson, writeVersionedJson } from '../../core/persistence/atomicJsonStore'
 import { getDesktopDataPaths } from '../platform/desktopDataPaths'
+import { AppSettingsStore } from '../../core/settings/appSettingsStore'
 
 const SERVICE = 'audiobookforge'
 const LEGACY_ACCOUNT = 'abs-api-key'
 const SESSION_ACCOUNT = 'abs-session'
-const DEFAULT_MODEL: WhisperModel = 'large-v3-turbo-q5_0'
-const SETTINGS_SCHEMA_VERSION = 1
-const VALID_MODELS = new Set<WhisperModel>(WHISPER_MODELS.map((model) => model.id))
-const VALID_COMPUTE_PREFERENCES = new Set<ComputePreference>(['automatic', 'cpu'])
-
-function getSettingsPath(): string {
-  return getDesktopDataPaths().settingsFile
-}
-
-function getDefaultModel(model: unknown): WhisperModel {
-  return typeof model === 'string' && VALID_MODELS.has(model as WhisperModel)
-    ? (model as WhisperModel)
-    : DEFAULT_MODEL
-}
-
-function normalizeSettings(value: unknown): AppSettings {
-  if (!value || typeof value !== 'object') {
-    throw new Error('Settings must be an object.')
-  }
-
-  const parsed = value as Partial<AppSettings>
-  const validatedUrl = typeof parsed.absUrl === 'string' ? validateAbsUrl(parsed.absUrl) : null
-  return {
-    absUrl: validatedUrl && validatedUrl.ok ? validatedUrl.normalizedUrl : '',
-    absUsername: typeof parsed.absUsername === 'string' ? parsed.absUsername : '',
-    defaultModel: getDefaultModel(parsed.defaultModel),
-    computePreference:
-      typeof parsed.computePreference === 'string' &&
-      VALID_COMPUTE_PREFERENCES.has(parsed.computePreference as ComputePreference)
-        ? (parsed.computePreference as ComputePreference)
-        : 'automatic'
-  }
-}
-
-function isAppSettings(value: unknown): value is AppSettings {
-  if (!value || typeof value !== 'object') return false
-  const settings = value as Partial<AppSettings>
-  return (
-    typeof settings.absUrl === 'string' &&
-    (settings.absUsername === undefined || typeof settings.absUsername === 'string') &&
-    typeof settings.defaultModel === 'string' &&
-    VALID_MODELS.has(settings.defaultModel as WhisperModel) &&
-    (settings.computePreference === undefined ||
-      (typeof settings.computePreference === 'string' &&
-        VALID_COMPUTE_PREFERENCES.has(settings.computePreference as ComputePreference)))
-  )
+function getStore(): AppSettingsStore {
+  return new AppSettingsStore(getDesktopDataPaths().settingsFile)
 }
 
 export function loadSettings(): AppSettings {
-  const settingsPath = getSettingsPath()
-  if (!existsSync(settingsPath)) {
-    return {
-      absUrl: '',
-      absUsername: '',
-      defaultModel: DEFAULT_MODEL,
-      computePreference: 'automatic'
-    }
-  }
-
-  return readVersionedJson({
-    filePath: settingsPath,
-    schemaVersion: SETTINGS_SCHEMA_VERSION,
-    validate: isAppSettings,
-    migrateLegacy: normalizeSettings
-  }).data
+  return getStore().load()
 }
 
 function saveSettings(settings: AppSettings): void {
-  writeVersionedJson(getSettingsPath(), SETTINGS_SCHEMA_VERSION, settings)
+  getStore().save(settings)
 }
 
 export interface AbsSession {
@@ -133,35 +71,17 @@ export function registerSettingsIpc(): void {
   })
 
   ipcMain.handle(IPC.SETTINGS_SET_URL, (_event, url: string) => {
-    const validation = validateAbsUrl(url)
-    if (!validation.ok) {
-      throw new Error(validation.error)
-    }
-
-    const settings = loadSettings()
-    settings.absUrl = validation.normalizedUrl
-    saveSettings(settings)
+    getStore().setUrl(url)
   })
 
   ipcMain.handle(IPC.SETTINGS_SET_DEFAULT_MODEL, (_event, model: WhisperModel) => {
-    if (!VALID_MODELS.has(model)) {
-      throw new Error('Unsupported whisper model.')
-    }
-
-    const settings = loadSettings()
-    settings.defaultModel = model
-    saveSettings(settings)
+    getStore().setDefaultModel(model)
   })
 
   ipcMain.handle(
     IPC.SETTINGS_SET_COMPUTE_PREFERENCE,
     (_event, preference: ComputePreference) => {
-      if (!VALID_COMPUTE_PREFERENCES.has(preference)) {
-        throw new Error('Unsupported compute preference.')
-      }
-      const settings = loadSettings()
-      settings.computePreference = preference
-      saveSettings(settings)
+      getStore().setComputePreference(preference)
     }
   )
 }
