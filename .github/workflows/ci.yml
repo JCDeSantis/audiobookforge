@@ -5,31 +5,74 @@ on:
     branches:
       - master
       - main
+      - codex/docker-web-platform
   pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  validate:
+  windows:
+    name: Windows regression and production build
     runs-on: windows-latest
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint -- --quiet
+      - run: npm run build
 
-      - name: Install dependencies
-        run: npm ci
+  server:
+    name: Linux server boundary
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install without desktop native lifecycle scripts
+        run: npm ci --ignore-scripts
+      - run: npx vitest run src/core src/server src/shared
+      - run: npm run build:web
+      - run: npm run build:server
 
-      - name: Run tests
-        run: npm test
-
-      - name: Build app
-        run: npm run build
+  docker-cpu:
+    name: Universal image on CPU-only host
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build the universal CPU/CUDA image
+        run: docker build --tag audiobookforge:ci .
+      - name: Start without an NVIDIA runtime
+        run: >-
+          docker run --detach --name audiobookforge-ci
+          --publish 127.0.0.1:3000:3000
+          --env ABF_WEB_PASSWORD=ci-password
+          audiobookforge:ci
+      - name: Wait for authenticated web runtime health
+        shell: bash
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:3000/healthz; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs audiobookforge-ci
+          exit 1
+      - name: Confirm CPU-only startup did not require NVIDIA
+        run: docker inspect --format='{{.State.Running}}' audiobookforge-ci | grep true
+      - name: Show container logs on failure
+        if: failure()
+        run: docker logs audiobookforge-ci
