@@ -1,6 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http'
+import { randomUUID } from 'crypto'
 import { createReadStream, existsSync, statSync } from 'fs'
-import { extname, join, normalize, relative, resolve } from 'path'
+import { basename, extname, join, normalize, relative, resolve } from 'path'
 import type { RuntimeCapabilities } from '../shared/types'
 import { EventBroker } from './events/eventBroker'
 import { LoginRateLimiter } from './http/rateLimiter'
@@ -15,6 +16,11 @@ import { ArtifactStore } from '../core/artifacts/artifactStore'
 import { RetentionService } from '../core/artifacts/retentionService'
 import { UPLOAD_CHUNK_BYTES, UploadStore } from './uploads/uploadStore'
 import type { CreateUploadFile } from './uploads/types'
+import { ServerQueue, type ServerQueueInput } from './queue/serverQueue'
+import { ServerQueueWorker } from './queue/serverQueueWorker'
+import { ServerModelStore } from './transcription/modelStore'
+import { ServerTranscriber } from './transcription/serverTranscriber'
+import { isSupportedWhisperModel } from '../shared/whisperModels'
 
 const SESSION_COOKIE = 'abf_session'
 const MAX_JSON_BYTES = 16 * 1024
@@ -154,6 +160,17 @@ function serveStatic(pathname: string, config: ServerRuntimeConfig, response: Se
   createReadStream(filePath).pipe(response)
 }
 
+function releaseJobArtifacts(
+  job: ReturnType<ServerQueue['get']>,
+  artifacts: ArtifactStore,
+  uploads: UploadStore
+): void {
+  for (const artifactId of job.resultArtifactIds ?? []) {
+    if (artifacts.get(artifactId)) artifacts.removeReference(artifactId, `job:${job.id}`)
+  }
+  if (job.uploadSessionId) uploads.releaseFromJob(job.uploadSessionId, job.id)
+}
+
 export interface WebServerRuntime {
   server: Server
   events: EventBroker
@@ -171,6 +188,14 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
   retention.start()
   const uploads = new UploadStore(config.dataPaths, artifacts)
   uploads.load()
+  const queue = new ServerQueue(config.dataPaths, Date.now, (jobs) =>
+    events.publish('queue.updated', jobs)
+  )
+  queue.load()
+  const models = new ServerModelStore(config.dataPaths, artifacts)
+  const transcriber = new ServerTranscriber(config.dataPaths, artifacts, models, config)
+  const worker = new ServerQueueWorker(queue, uploads, transcriber)
+  worker.start()
 
   const authenticate = (request: IncomingMessage): RequestContext | null => {
     const session = sessions.verify(parseCookies(request)[SESSION_COOKIE])
@@ -238,6 +263,96 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
 
       if (method === 'GET' && pathname === '/api/v1/capabilities') {
         sendJson(response, 200, WEB_CAPABILITIES)
+        return
+      }
+
+      if (method === 'GET' && pathname === '/api/v1/jobs') {
+        sendJson(response, 200, queue.list())
+        return
+      }
+      if (method === 'POST' && pathname === '/api/v1/jobs') {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const body = (await readJson(request)) as unknown as ServerQueueInput
+        if (body.source === 'upload') {
+          if (!body.uploadSessionId) throw new Error('Uploaded jobs require an upload session.')
+          const upload = uploads.get(body.uploadSessionId)
+          if (upload.state !== 'finalized') throw new Error('Upload session is not finalized.')
+          body.audioFiles = upload.files
+            .filter((file) => file.kind === 'audio')
+            .map((file) => file.name)
+        }
+        const job = queue.add(body)
+        if (job.source === 'upload' && job.uploadSessionId) {
+          uploads.attachToJob(job.uploadSessionId, job.id)
+        }
+        sendJson(response, 201, job)
+        worker.kick()
+        return
+      }
+      if (method === 'PUT' && pathname === '/api/v1/jobs/order') {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const body = await readJson(request)
+        if (!Array.isArray(body.orderedIds)) throw new Error('orderedIds must be an array.')
+        queue.reorder(body.orderedIds.filter((id): id is string => typeof id === 'string'))
+        response.statusCode = 204
+        response.end()
+        return
+      }
+      if (method === 'DELETE' && pathname === '/api/v1/jobs/finished') {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        for (const job of queue.clearFinished()) releaseJobArtifacts(job, artifacts, uploads)
+        response.statusCode = 204
+        response.end()
+        return
+      }
+
+      const jobActionMatch = pathname.match(
+        /^\/api\/v1\/jobs\/([a-f0-9-]+)\/(cancel|pause|resume|retry)$/i
+      )
+      if (method === 'POST' && jobActionMatch) {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        const [, jobId, action] = jobActionMatch
+        if (action === 'cancel') {
+          queue.cancel(jobId)
+          worker.interrupt(jobId)
+          releaseJobArtifacts(queue.get(jobId), artifacts, uploads)
+        }
+        if (action === 'pause') {
+          queue.pause(jobId)
+          worker.interrupt(jobId)
+        }
+        if (action === 'resume') {
+          queue.resume(jobId)
+          worker.kick()
+        }
+        if (action === 'retry') {
+          const body = await readJson(request)
+          const model = body.model === undefined ? undefined : body.model
+          if (model !== undefined && !isSupportedWhisperModel(model)) {
+            throw new Error('Unsupported Whisper model.')
+          }
+          const retry = queue.retry(jobId, model)
+          if (retry.uploadSessionId) uploads.attachToJob(retry.uploadSessionId, retry.id)
+          sendJson(response, 201, retry)
+          worker.kick()
+          return
+        }
+        response.statusCode = 204
+        response.end()
+        return
+      }
+
+      const jobMatch = pathname.match(/^\/api\/v1\/jobs\/([a-f0-9-]+)$/i)
+      if (method === 'DELETE' && jobMatch) {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        releaseJobArtifacts(queue.remove(jobMatch[1]), artifacts, uploads)
+        response.statusCode = 204
+        response.end()
         return
       }
 
@@ -318,6 +433,76 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
         return
       }
 
+      const resultDownloadMatch = pathname.match(
+        /^\/api\/v1\/artifacts\/([a-f0-9-]+)\/download$/i
+      )
+      if ((method === 'GET' || method === 'HEAD') && resultDownloadMatch) {
+        const artifact = artifacts.get(resultDownloadMatch[1])
+        if (
+          !artifact ||
+          artifact.category !== 'result' ||
+          artifact.state !== 'active' ||
+          !existsSync(artifact.path)
+        ) {
+          sendJson(response, 404, { error: 'Result artifact was not found.' })
+          return
+        }
+        const size = statSync(artifact.path).size
+        let start = 0
+        let end = Math.max(0, size - 1)
+        const range = request.headers.range
+        if (range) {
+          const match = range.match(/^bytes=(\d*)-(\d*)$/)
+          if (!match || (!match[1] && !match[2]) || size === 0) {
+            response.statusCode = 416
+            response.setHeader('Content-Range', `bytes */${size}`)
+            response.end()
+            return
+          }
+          if (!match[1]) {
+            const suffixLength = Number(match[2])
+            start = Math.max(0, size - suffixLength)
+            end = size - 1
+          } else {
+            start = Number(match[1])
+            end = match[2] ? Number(match[2]) : size - 1
+          }
+          if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || end >= size) {
+            response.statusCode = 416
+            response.setHeader('Content-Range', `bytes */${size}`)
+            response.end()
+            return
+          }
+          response.statusCode = 206
+          response.setHeader('Content-Range', `bytes ${start}-${end}/${size}`)
+        } else {
+          response.statusCode = 200
+        }
+        response.setHeader('Accept-Ranges', 'bytes')
+        response.setHeader('Content-Type', contentType(artifact.path))
+        response.setHeader('Content-Length', end - start + 1)
+        response.setHeader(
+          'Content-Disposition',
+          `attachment; filename*=UTF-8''${encodeURIComponent(basename(artifact.path))}`
+        )
+        if (method === 'HEAD' || size === 0) {
+          response.end()
+          return
+        }
+        const leaseId = `download:${randomUUID()}`
+        artifacts.acquireLease(artifact.id, leaseId)
+        let released = false
+        const release = (): void => {
+          if (released) return
+          released = true
+          artifacts.releaseLease(artifact.id, leaseId)
+        }
+        response.once('close', release)
+        response.once('finish', release)
+        createReadStream(artifact.path, { start, end }).once('error', release).pipe(response)
+        return
+      }
+
       if (method === 'GET' && pathname === '/api/v1/events') {
         response.statusCode = 200
         response.setHeader('Content-Type', 'text/event-stream')
@@ -325,10 +510,11 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
         response.setHeader('Connection', 'keep-alive')
         response.flushHeaders()
         const lastEventId = Number(request.headers['last-event-id'] ?? 0)
-        const unsubscribe = events.subscribe(response, Number.isFinite(lastEventId) ? lastEventId : 0, {
-          queue: [],
-          revision: 0
-        })
+        const unsubscribe = events.subscribe(
+          response,
+          Number.isFinite(lastEventId) ? lastEventId : 0,
+          { queue: queue.list() }
+        )
         request.on('close', unsubscribe)
         return
       }
@@ -366,6 +552,7 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
     server,
     events,
     close: () => {
+      worker.stop()
       retention.stop()
       return new Promise<void>((resolveClose, reject) => {
         server.close((error) => (error ? reject(error) : resolveClose()))

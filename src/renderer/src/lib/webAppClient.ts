@@ -8,6 +8,7 @@ import type {
   WhisperModel,
   WhisperStorageInfo
 } from '../../../shared/types'
+import type { WebUploadSelection } from '../../../shared/types'
 import type { AppClient } from './ipc'
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -52,6 +53,7 @@ export class WebAppClient implements AppClient {
       const body = (await response.json().catch(() => ({}))) as { error?: string }
       throw new Error(body.error ?? `Request failed (${response.status}).`)
     }
+    if (response.status === 204) return undefined as T
     return (await response.json()) as T
   }
 
@@ -83,7 +85,88 @@ export class WebAppClient implements AppClient {
     pickAudio: async (): Promise<null> => null,
     pickEpub: async (): Promise<null> => null,
     pickOutputFolder: async (): Promise<null> => null,
-    showInExplorer: async (): Promise<void> => undefined
+    showInExplorer: async (): Promise<void> => undefined,
+    downloadArtifact: async (artifactId: string): Promise<void> => {
+      const link = document.createElement('a')
+      link.href = `/api/v1/artifacts/${encodeURIComponent(artifactId)}/download`
+      link.click()
+    }
+  }
+
+  uploads = {
+    uploadFiles: async (
+      files: File[],
+      onProgress: (percent: number) => void
+    ): Promise<WebUploadSelection> => {
+      if (files.length === 0) throw new Error('Select at least one audiobook file.')
+      const session = await this.request<{
+        id: string
+        files: Array<{ id: string; name: string; sizeBytes: number; offset: number; kind: string }>
+      }>('/api/v1/uploads', {
+        method: 'POST',
+        body: JSON.stringify({
+          files: files.map((file) => ({
+            name: file.name,
+            sizeBytes: file.size,
+            lastModified: file.lastModified
+          }))
+        })
+      })
+      const totalBytes = files.reduce((total, file) => total + file.size, 0)
+      let uploadedBytes = 0
+
+      for (const localFile of files) {
+        const remoteFile = session.files.find((entry) => entry.name === localFile.name)
+        if (!remoteFile) throw new Error(`Upload session did not accept ${localFile.name}.`)
+        let offset = remoteFile.offset
+        while (offset < localFile.size) {
+          const chunk = localFile.slice(offset, Math.min(offset + 16 * 1024 * 1024, localFile.size))
+          const bytes = await chunk.arrayBuffer()
+          const checksumBytes = await crypto.subtle.digest('SHA-256', bytes)
+          const checksum = Array.from(new Uint8Array(checksumBytes), (byte) =>
+            byte.toString(16).padStart(2, '0')
+          ).join('')
+          const response = await fetch(
+            `/api/v1/uploads/${session.id}/files/${remoteFile.id}`,
+            {
+              method: 'PUT',
+              credentials: 'same-origin',
+              headers: {
+                'Content-Type': 'application/octet-stream',
+                'Upload-Offset': String(offset),
+                'X-Chunk-SHA256': checksum,
+                'X-ABF-CSRF': this.csrfToken ?? ''
+              },
+              body: bytes
+            }
+          )
+          if (!response.ok) {
+            const body = (await response.json().catch(() => ({}))) as { error?: string }
+            throw new Error(body.error ?? `Upload failed (${response.status}).`)
+          }
+          const nextOffset = Number(response.headers.get('Upload-Offset'))
+          if (!Number.isSafeInteger(nextOffset) || nextOffset <= offset) {
+            throw new Error('The server returned an invalid upload offset.')
+          }
+          uploadedBytes += nextOffset - offset
+          offset = nextOffset
+          onProgress(Math.min(99, Math.round((uploadedBytes / totalBytes) * 100)))
+        }
+        await this.request(`/api/v1/uploads/${session.id}/files/${remoteFile.id}/finalize`, {
+          method: 'POST'
+        })
+      }
+
+      await this.request(`/api/v1/uploads/${session.id}/finalize`, { method: 'POST' })
+      onProgress(100)
+      return {
+        sessionId: session.id,
+        audioFileNames: session.files
+          .filter((file) => file.kind === 'audio')
+          .map((file) => file.name),
+        epubFileName: session.files.find((file) => file.kind === 'epub')?.name ?? null
+      }
+    }
   }
 
   queue = {

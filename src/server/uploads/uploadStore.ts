@@ -143,6 +143,36 @@ export class UploadStore {
     return copySession(this.requireSession(sessionId))
   }
 
+  getFinalizedInputs(sessionId: string): { audioPaths: string[]; epubPath: string | null } {
+    const session = this.requireSession(sessionId)
+    if (session.state !== 'finalized') throw new Error('Upload session is not finalized.')
+    return {
+      audioPaths: session.files
+        .filter((file) => file.kind === 'audio' && file.state === 'finalized')
+        .map((file) => file.path),
+      epubPath:
+        session.files.find((file) => file.kind === 'epub' && file.state === 'finalized')?.path ??
+        null
+    }
+  }
+
+  attachToJob(sessionId: string, jobId: string): void {
+    const session = this.requireSession(sessionId)
+    if (session.state !== 'finalized') throw new Error('Upload session is not finalized.')
+    for (const file of session.files) {
+      if (!file.artifactId) continue
+      this.artifacts.addReference(file.artifactId, `job:${jobId}`)
+      this.artifacts.removeReference(file.artifactId, `upload-session:${session.id}`)
+    }
+  }
+
+  releaseFromJob(sessionId: string, jobId: string): void {
+    const session = this.requireSession(sessionId)
+    for (const file of session.files) {
+      if (file.artifactId) this.artifacts.removeReference(file.artifactId, `job:${jobId}`)
+    }
+  }
+
   appendChunk(
     sessionId: string,
     fileId: string,

@@ -145,6 +145,10 @@ function JobCard({
     }
   }
 
+  const handleDownload = (artifactId: string): void => {
+    void getAppClient().files.downloadArtifact(artifactId)
+  }
+
   return (
     <article
       className={`overflow-hidden rounded-lg border px-3.5 py-3 ${quiet ? 'min-h-[9.5rem]' : 'h-[11.75rem]'} ${
@@ -168,9 +172,9 @@ function JobCard({
       </div>
       <div
         className="mt-1 h-4 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] leading-4 text-[#bb9191]"
-        title={`${job.source === 'abs' ? 'AudioBookShelf' : 'Local files'} - ${modelName}`}
+        title={`${job.source === 'abs' ? 'AudioBookShelf' : job.source === 'upload' ? 'Browser upload' : 'Local files'} - ${modelName}`}
       >
-        {job.source === 'abs' ? 'AudioBookShelf' : 'Local files'} - {modelName}
+        {job.source === 'abs' ? 'AudioBookShelf' : job.source === 'upload' ? 'Browser upload' : 'Local files'} - {modelName}
       </div>
 
       {!quiet && (
@@ -263,6 +267,17 @@ function JobCard({
         )}
 
         <div className="ml-auto flex min-w-0 flex-nowrap justify-end gap-1.5">
+          {job.status === 'done' &&
+            job.source === 'upload' &&
+            job.resultArtifactIds?.map((artifactId, index) => (
+              <button
+                key={artifactId}
+                className="rounded-md border border-[#28543a] px-2.5 py-1.5 text-[#a9e3bd] transition-colors hover:border-[#4b9a69] hover:text-[#effff4]"
+                onClick={() => handleDownload(artifactId)}
+              >
+                {job.resultArtifactIds!.length === 1 ? 'Download' : `Download ${index + 1}`}
+              </button>
+            ))}
           {isActive && (
             <button
               className="h-8 rounded-md border border-[#5b1f1f] px-2.5 text-[#f0c7c7] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"

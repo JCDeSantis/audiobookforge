@@ -101,7 +101,7 @@ export type SubtitleFormat = 'srt' | 'vtt' | 'lrc'
 export interface TranscriptionJob {
   id: string
   status: JobStatus
-  source: 'local' | 'abs'
+  source: 'local' | 'abs' | 'upload'
   title: string
   audioFiles: string[]
   outputPath: string | null // output folder for local jobs; null for ABS
@@ -120,6 +120,16 @@ export interface TranscriptionJob {
   createdAt: number
   startedAt: number | null
   completedAt: number | null
+  uploadSessionId?: string | null
+  resultArtifactIds?: string[]
+  computeBackend?: ComputeBackend
+  computeFallbackReason?: string | null
+}
+
+export interface WebUploadSelection {
+  sessionId: string
+  audioFileNames: string[]
+  epubFileName: string | null
 }
 
 // ─── ABS ─────────────────────────────────────────────────────────────────────

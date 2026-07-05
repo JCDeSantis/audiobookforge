@@ -122,7 +122,7 @@ export function JobOptionsCard(): React.JSX.Element {
           </div>
         )}
 
-        {wizard.source && (
+        {wizard.source && wizard.source !== 'upload' && (
           <div>
             <div className="mb-1.5 text-xs font-medium text-[#f9e7e7]">
               EPUB {linkedEpub || linkedEpubSummary ? '(linked from ABS)' : '(optional)'}

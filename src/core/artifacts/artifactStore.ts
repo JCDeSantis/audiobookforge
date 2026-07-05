@@ -115,6 +115,13 @@ export class ArtifactStore {
     }))
   }
 
+  get(artifactId: string): ManagedArtifact | null {
+    const artifact = this.data.artifacts.find((entry) => entry.id === artifactId)
+    return artifact
+      ? { ...artifact, references: [...artifact.references], leases: [...artifact.leases] }
+      : null
+  }
+
   register(input: RegisterArtifactInput): ManagedArtifact {
     if (!isPathInsideRoot(this.paths.root, input.path)) {
       throw new Error('Managed artifacts must be inside application storage.')

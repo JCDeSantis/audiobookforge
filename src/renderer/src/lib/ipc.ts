@@ -13,6 +13,7 @@ import type {
   ManagedStorageSummary,
   RuntimeCapabilities
 } from '../../../shared/types'
+import type { WebUploadSelection } from '../../../shared/types'
 
 export interface AppClient {
   runtime: {
@@ -29,6 +30,13 @@ export interface AppClient {
     pickEpub: () => Promise<string | null>
     pickOutputFolder: () => Promise<string | null>
     showInExplorer: (path: string) => Promise<void>
+    downloadArtifact: (artifactId: string) => Promise<void>
+  }
+  uploads: {
+    uploadFiles: (
+      files: File[],
+      onProgress: (percent: number) => void
+    ) => Promise<WebUploadSelection>
   }
   queue: {
     add: (job: Omit<TranscriptionJob, 'id' | 'status' | 'progress' | 'srtPath' | 'srtPaths' | 'qualityReport' | 'error' | 'createdAt' | 'startedAt' | 'completedAt'>) => Promise<TranscriptionJob>

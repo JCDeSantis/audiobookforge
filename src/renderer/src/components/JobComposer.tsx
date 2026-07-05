@@ -9,6 +9,7 @@ export function JobComposer(): React.JSX.Element {
   const readyToContinue = canContinue(wizard)
   const hasSelectedSource =
     (wizard.source === 'local' && wizard.audioFiles.length > 0) ||
+    (wizard.source === 'upload' && wizard.audioFiles.length > 0) ||
     (wizard.source === 'abs' && (wizard.absItems.length > 0 || Boolean(wizard.absItem)))
 
   return (

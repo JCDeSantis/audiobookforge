@@ -26,7 +26,10 @@ describe('authenticated web runtime', () => {
       password: 'correct-password',
       trustProxy: false,
       sessionSecretFile: join(root, 'session.key'),
-      webRoot
+      webRoot,
+      ffmpegPath: 'ffmpeg',
+      whisperCpuPath: 'whisper-cpu',
+      whisperCudaPath: 'whisper-cuda'
     }
     runtime = createWebServer(config)
     await new Promise<void>((resolveListen) => runtime!.server.listen(0, '127.0.0.1', resolveListen))

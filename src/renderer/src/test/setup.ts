@@ -28,7 +28,8 @@ const defaultElectronMock = {
     pickAudio: async () => null,
     pickEpub: async () => null,
     pickOutputFolder: async () => null,
-    showInExplorer: async () => undefined
+    showInExplorer: async () => undefined,
+    downloadArtifact: async () => undefined
   },
   queue: {
     add: async () => {
@@ -51,6 +52,11 @@ const defaultElectronMock = {
     getBooks: async () => [],
     getBook: async () => {
       throw new Error('abs.getBook mock not configured')
+    }
+  },
+  uploads: {
+    uploadFiles: async () => {
+      throw new Error('uploads.uploadFiles mock not configured')
     }
   },
   whisper: {

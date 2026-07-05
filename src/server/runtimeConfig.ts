@@ -10,6 +10,9 @@ export interface ServerRuntimeConfig {
   trustProxy: boolean
   sessionSecretFile: string
   webRoot: string
+  ffmpegPath: string
+  whisperCpuPath: string
+  whisperCudaPath: string
 }
 
 function parsePort(value: string | undefined): number {
@@ -50,6 +53,11 @@ export function loadServerRuntimeConfig(
       environment.ABF_SESSION_SECRET_FILE?.trim() ||
         resolve(dataRoot, 'config', 'session-secret.key')
     ),
-    webRoot: resolve(environment.ABF_WEB_ROOT?.trim() || resolve(process.cwd(), 'out', 'renderer'))
+    webRoot: resolve(environment.ABF_WEB_ROOT?.trim() || resolve(process.cwd(), 'out', 'renderer')),
+    ffmpegPath: environment.ABF_FFMPEG_PATH?.trim() || '/usr/bin/ffmpeg',
+    whisperCpuPath:
+      environment.ABF_WHISPER_CPU_PATH?.trim() || '/opt/audiobookforge/whisper/cpu/whisper-cli',
+    whisperCudaPath:
+      environment.ABF_WHISPER_CUDA_PATH?.trim() || '/opt/audiobookforge/whisper/cuda/whisper-cli'
   }
 }

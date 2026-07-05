@@ -13,6 +13,7 @@ import {
   selectAbsItem as applyAbsItemSelection,
   selectAbsItems as applyAbsItemsSelection,
   selectLocalFiles as applyLocalFileSelection,
+  selectWebUpload as applyWebUploadSelection,
   type JobDraft
 } from '../lib/jobDraft'
 
@@ -23,6 +24,8 @@ interface WizardState extends JobDraft {}
 const defaultWizard: WizardState = {
   source: null,
   audioFiles: [],
+  uploadSessionId: null,
+  uploadEpubFileName: null,
   absItem: null,
   absItems: [],
   epubPath: null,
@@ -66,6 +69,11 @@ interface AppStore {
   setWizardSubtitleFormat: (format: SubtitleFormat, enabled: boolean) => void
   setWizardOutputFolder: (folder: string | null) => void
   selectLocalFiles: (files: string[]) => void
+  selectWebUpload: (
+    sessionId: string,
+    audioFileNames: string[],
+    epubFileName: string | null
+  ) => void
   selectAbsItem: (item: AbsBookSummary) => void
   selectAbsItems: (items: AbsBookSummary[]) => void
   clearSelectedSource: () => void
@@ -94,6 +102,7 @@ function isFreshDraft(wizard: WizardState, defaultModel: WhisperModel): boolean 
   return (
     wizard.source === null &&
     wizard.audioFiles.length === 0 &&
+    wizard.uploadSessionId == null &&
     wizard.absItem === null &&
     wizard.absItems.length === 0 &&
     wizard.epubPath === null &&
@@ -133,6 +142,10 @@ export const useAppStore = create<AppStore>((set) => ({
     set((state) => ({ wizard: { ...state.wizard, outputFolder } })),
   selectLocalFiles: (audioFiles) =>
     set((state) => ({ wizard: applyLocalFileSelection(state.wizard, audioFiles) })),
+  selectWebUpload: (sessionId, audioFileNames, epubFileName) =>
+    set((state) => ({
+      wizard: applyWebUploadSelection(state.wizard, sessionId, audioFileNames, epubFileName)
+    })),
   selectAbsItem: (absItem) =>
     set((state) => ({ wizard: applyAbsItemSelection(state.wizard, absItem) })),
   selectAbsItems: (absItems) =>
