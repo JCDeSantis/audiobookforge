@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'child_process'
 import { cpus } from 'os'
 import { basename, extname, join } from 'path'
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import type { DataPaths } from '../../core/platform/dataPaths'
 import { ArtifactStore } from '../../core/artifacts/artifactStore'
 import type {
@@ -15,6 +15,11 @@ import { classifyCudaFailure } from '../../shared/computeFallback'
 import { convertSrtToFormat } from '../../shared/subtitleFormats'
 import { ServerModelStore } from './modelStore'
 import { extractEpubVocabulary } from '../../core/context/epubVocabulary'
+import {
+  assertFreeProcessingSpace,
+  estimateProcessingBytes,
+  isDiskFullError
+} from '../../core/storage/processingSpace'
 
 interface ProcessResult {
   code: number | null
@@ -69,6 +74,10 @@ export class ServerTranscriber {
     epubPath: string | null = null
   ): Promise<ServerTranscriptionResult> {
     if (audioPaths.length === 0) throw new Error('No uploaded audio files were available.')
+    assertFreeProcessingSpace(
+      this.paths.root,
+      estimateProcessingBytes(audioPaths.map((path) => statSync(path).size))
+    )
     const jobTemp = join(this.paths.tempDir, jobId)
     const resultDir = join(this.paths.resultsDir, jobId)
     mkdirSync(jobTemp, { recursive: true })
@@ -113,7 +122,12 @@ export class ServerTranscriber {
         ],
         signal
       )
-      if (prepared.code !== 0) throw new Error(`Audio preparation failed: ${prepared.stderr.slice(-800)}`)
+      if (prepared.code !== 0) {
+        if (isDiskFullError(prepared.stderr)) {
+          throw new Error('Transcription ran out of disk space while preparing decoded audio.')
+        }
+        throw new Error(`Audio preparation failed: ${prepared.stderr.slice(-800)}`)
+      }
       onProgress({ phase: 'preparing', percent: 100 })
 
       const outputBase = join(jobTemp, 'transcript')
@@ -158,6 +172,9 @@ export class ServerTranscriber {
         }
       }
       if (whisperResult.code !== 0) {
+        if (isDiskFullError(whisperResult.stderr)) {
+          throw new Error('Transcription ran out of disk space while Whisper was writing results.')
+        }
         throw new Error(`Whisper transcription failed: ${whisperResult.stderr.slice(-1000)}`)
       }
       const sourceSrt = `${outputBase}.srt`

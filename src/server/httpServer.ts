@@ -28,6 +28,8 @@ import { ServerAbsClient } from './abs/absClient'
 import { ServerAbsSessionStore } from './abs/sessionStore'
 import { ServerAbsJobAdapter } from './abs/absJobAdapter'
 import { streamTar } from './downloads/tarStream'
+import { ServerInstanceLock } from './runtime/instanceLock'
+import { scavengeInterruptedProcessing } from './runtime/startupRecovery'
 
 const SESSION_COOKIE = 'abf_session'
 const MAX_JSON_BYTES = 16 * 1024
@@ -201,32 +203,43 @@ export interface WebServerRuntime {
 export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
   const configuredPassword = loadConfiguredPassword(config)
   const sessions = new SessionManager(loadOrCreateSessionSecret(config.sessionSecretFile))
-  const limiter = new LoginRateLimiter()
-  const events = new EventBroker()
-  const artifacts = new ArtifactStore(config.dataPaths)
-  artifacts.load()
-  const retention = new RetentionService(artifacts)
-  retention.start()
-  const uploads = new UploadStore(config.dataPaths, artifacts)
-  uploads.load()
-  const settings = new AppSettingsStore(config.dataPaths.settingsFile)
-  const absClient = new ServerAbsClient()
-  const absSessions = new ServerAbsSessionStore(config.dataPaths)
-  const absJobs = new ServerAbsJobAdapter(config.dataPaths, absSessions, absClient, artifacts)
-  const queue = new ServerQueue(config.dataPaths, Date.now, (jobs) =>
-    events.publish('queue.updated', jobs)
-  )
-  queue.load()
-  const models = new ServerModelStore(config.dataPaths, artifacts)
-  const transcriber = new ServerTranscriber(
-    config.dataPaths,
-    artifacts,
-    models,
-    config,
-    () => settings.load().computePreference ?? 'automatic'
-  )
-  const worker = new ServerQueueWorker(queue, uploads, transcriber, absJobs)
-  worker.start()
+  const instanceLock = new ServerInstanceLock(config.dataPaths)
+  instanceLock.acquire()
+  const { limiter, events, artifacts, retention, uploads, settings, absClient, absSessions, queue, models, worker } = (() => {
+    try {
+      scavengeInterruptedProcessing(config.dataPaths)
+      const limiter = new LoginRateLimiter()
+      const events = new EventBroker()
+      const artifacts = new ArtifactStore(config.dataPaths)
+      artifacts.load()
+      const retention = new RetentionService(artifacts)
+      retention.start()
+      const uploads = new UploadStore(config.dataPaths, artifacts)
+      uploads.load()
+      const settings = new AppSettingsStore(config.dataPaths.settingsFile)
+      const absClient = new ServerAbsClient()
+      const absSessions = new ServerAbsSessionStore(config.dataPaths)
+      const absJobs = new ServerAbsJobAdapter(config.dataPaths, absSessions, absClient, artifacts)
+      const queue = new ServerQueue(config.dataPaths, Date.now, (jobs) =>
+        events.publish('queue.updated', jobs)
+      )
+      queue.load()
+      const models = new ServerModelStore(config.dataPaths, artifacts)
+      const transcriber = new ServerTranscriber(
+        config.dataPaths,
+        artifacts,
+        models,
+        config,
+        () => settings.load().computePreference ?? 'automatic'
+      )
+      const worker = new ServerQueueWorker(queue, uploads, transcriber, absJobs)
+      worker.start()
+      return { limiter, events, artifacts, retention, uploads, settings, absClient, absSessions, queue, models, worker }
+    } catch (error) {
+      instanceLock.release()
+      throw error
+    }
+  })()
 
   const authenticate = (request: IncomingMessage): RequestContext | null => {
     const session = sessions.verify(parseCookies(request)[SESSION_COOKIE])
@@ -817,7 +830,11 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
       worker.stop()
       retention.stop()
       return new Promise<void>((resolveClose, reject) => {
-        server.close((error) => (error ? reject(error) : resolveClose()))
+        server.close((error) => {
+          instanceLock.release()
+          if (error) reject(error)
+          else resolveClose()
+        })
       })
     }
   }

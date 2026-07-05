@@ -5,7 +5,7 @@ import type { LookupFunction } from 'net'
 import { isIP } from 'net'
 import { createWriteStream, mkdirSync, renameSync, rmSync } from 'fs'
 import { readFile } from 'fs/promises'
-import { basename, extname, join } from 'path'
+import { basename, dirname, extname, join } from 'path'
 import type { AbsBook, AbsLibrary, AbsLoginResult } from '../../shared/types'
 import {
   isBlockedNetworkHostname,
@@ -20,6 +20,10 @@ import {
   splitSrtByDurations
 } from '../../shared/subtitleFormats'
 import type { SubtitleFormat } from '../../shared/types'
+import {
+  availableBytes,
+  DEFAULT_STORAGE_RESERVE_BYTES
+} from '../../core/storage/processingSpace'
 
 interface LoginResponse {
   user?: {
@@ -350,11 +354,15 @@ export class ServerAbsClient {
     const transport = url.protocol === 'https:' ? httpsRequest : httpRequest
     await new Promise<void>((resolveDownload, reject) => {
       let settled = false
+      let output: ReturnType<typeof createWriteStream> | null = null
       const finish = (error?: Error): void => {
         if (settled) return
         settled = true
         signal.removeEventListener('abort', abort)
-        if (error) reject(error)
+        if (error) {
+          output?.destroy()
+          reject(error)
+        }
         else resolveDownload()
       }
       const request = transport(
@@ -383,14 +391,30 @@ export class ServerAbsClient {
             finish(new Error('ABS media exceeds the configured download limit.'))
             return
           }
-          const output = createWriteStream(partial, { flags: 'wx' })
+          if (
+            availableBytes(dirname(target)) - Math.max(0, declared) <
+            DEFAULT_STORAGE_RESERVE_BYTES
+          ) {
+            response.destroy()
+            finish(new Error('Not enough free space to download ABS media safely.'))
+            return
+          }
+          output = createWriteStream(partial, { flags: 'wx' })
           let received = 0
+          let nextSpaceCheck = 256 * 1024 * 1024
           response.on('data', (chunk: Buffer) => {
             received += chunk.length
             if (received > maxBytes) request.destroy(new Error('ABS media exceeded the download limit.'))
+            if (received >= nextSpaceCheck) {
+              nextSpaceCheck += 256 * 1024 * 1024
+              if (availableBytes(dirname(target)) < DEFAULT_STORAGE_RESERVE_BYTES) {
+                request.destroy(new Error('Not enough free space to continue the ABS media download.'))
+              }
+            }
           })
           output.on('error', (error) => request.destroy(error))
           output.on('finish', () => finish())
+          response.on('error', (error) => request.destroy(error))
           response.pipe(output)
         }
       )
