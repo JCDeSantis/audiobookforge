@@ -27,6 +27,7 @@ import { AppSettingsStore } from '../core/settings/appSettingsStore'
 import { ServerAbsClient } from './abs/absClient'
 import { ServerAbsSessionStore } from './abs/sessionStore'
 import { ServerAbsJobAdapter } from './abs/absJobAdapter'
+import { streamTar } from './downloads/tarStream'
 
 const SESSION_COOKIE = 'abf_session'
 const MAX_JSON_BYTES = 16 * 1024
@@ -722,6 +723,45 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
         response.once('close', release)
         response.once('finish', release)
         createReadStream(artifact.path, { start, end }).once('error', release).pipe(response)
+        return
+      }
+
+      const jobArchiveMatch = pathname.match(/^\/api\/v1\/jobs\/([a-f0-9-]+)\/download-all$/i)
+      if (method === 'GET' && jobArchiveMatch) {
+        const job = queue.get(jobArchiveMatch[1])
+        const resultArtifacts = (job.resultArtifactIds ?? []).map((id) => artifacts.get(id))
+        if (
+          resultArtifacts.length === 0 ||
+          resultArtifacts.some(
+            (artifact) =>
+              !artifact ||
+              artifact.category !== 'result' ||
+              artifact.state !== 'active' ||
+              !existsSync(artifact.path)
+          )
+        ) {
+          sendJson(response, 404, { error: 'Job results were not found.' })
+          return
+        }
+        const activeArtifacts = resultArtifacts.filter((artifact) => artifact !== null)
+        const leaseId = `archive:${randomUUID()}`
+        for (const artifact of activeArtifacts) artifacts.acquireLease(artifact.id, leaseId)
+        response.statusCode = 200
+        response.setHeader('Content-Type', 'application/x-tar')
+        response.setHeader(
+          'Content-Disposition',
+          `attachment; filename*=UTF-8''${encodeURIComponent(`${job.title || 'results'}.tar`)}`
+        )
+        try {
+          await streamTar(
+            response,
+            activeArtifacts.map((artifact) => ({ path: artifact.path }))
+          )
+        } catch {
+          response.destroy()
+        } finally {
+          for (const artifact of activeArtifacts) artifacts.releaseLease(artifact.id, leaseId)
+        }
         return
       }
 

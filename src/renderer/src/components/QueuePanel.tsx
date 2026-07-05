@@ -149,6 +149,10 @@ function JobCard({
     void getAppClient().files.downloadArtifact(artifactId)
   }
 
+  const handleDownloadAll = (): void => {
+    void getAppClient().files.downloadJobResults(job.id)
+  }
+
   return (
     <article
       className={`overflow-hidden rounded-lg border px-3.5 py-3 ${quiet ? 'min-h-[9.5rem]' : 'h-[11.75rem]'} ${
@@ -278,13 +282,25 @@ function JobCard({
         <div className="ml-auto flex min-w-0 flex-nowrap justify-end gap-1.5">
           {job.status === 'done' &&
             (job.source === 'upload' || job.source === 'abs') &&
-            job.resultArtifactIds?.map((artifactId, index) => (
+            job.resultArtifactIds &&
+            job.resultArtifactIds.length > 1 && (
+              <button
+                className="rounded-md border border-[#28543a] px-2.5 py-1.5 text-[#a9e3bd] transition-colors hover:border-[#4b9a69] hover:text-[#effff4]"
+                onClick={handleDownloadAll}
+              >
+                Download All
+              </button>
+            )}
+          {job.status === 'done' &&
+            (job.source === 'upload' || job.source === 'abs') &&
+            job.resultArtifactIds?.length === 1 &&
+            job.resultArtifactIds.map((artifactId) => (
               <button
                 key={artifactId}
                 className="rounded-md border border-[#28543a] px-2.5 py-1.5 text-[#a9e3bd] transition-colors hover:border-[#4b9a69] hover:text-[#effff4]"
                 onClick={() => handleDownload(artifactId)}
               >
-                {job.resultArtifactIds!.length === 1 ? 'Download' : `Download ${index + 1}`}
+                Download
               </button>
             ))}
           {isActive && (

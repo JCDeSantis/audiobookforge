@@ -31,6 +31,7 @@ export interface AppClient {
     pickOutputFolder: () => Promise<string | null>
     showInExplorer: (path: string) => Promise<void>
     downloadArtifact: (artifactId: string) => Promise<void>
+    downloadJobResults: (jobId: string) => Promise<void>
   }
   uploads: {
     uploadFiles: (

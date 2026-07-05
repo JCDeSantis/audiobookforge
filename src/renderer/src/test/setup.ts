@@ -29,7 +29,8 @@ const defaultElectronMock = {
     pickEpub: async () => null,
     pickOutputFolder: async () => null,
     showInExplorer: async () => undefined,
-    downloadArtifact: async () => undefined
+    downloadArtifact: async () => undefined,
+    downloadJobResults: async () => undefined
   },
   queue: {
     add: async () => {

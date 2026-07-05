@@ -20,6 +20,8 @@ const electron = {
     pickOutputFolder: () => ipcRenderer.invoke(IPC.FILES_PICK_OUTPUT_FOLDER),
     showInExplorer: (path: string) => ipcRenderer.invoke(IPC.FILES_SHOW_IN_EXPLORER, path),
     downloadArtifact: () =>
+      Promise.reject(new Error('Managed result downloads are available in the web runtime only.')),
+    downloadJobResults: () =>
       Promise.reject(new Error('Managed result downloads are available in the web runtime only.'))
   },
 

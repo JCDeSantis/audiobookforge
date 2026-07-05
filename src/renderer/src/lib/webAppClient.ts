@@ -117,6 +117,11 @@ export class WebAppClient implements AppClient {
       const link = document.createElement('a')
       link.href = `/api/v1/artifacts/${encodeURIComponent(artifactId)}/download`
       link.click()
+    },
+    downloadJobResults: async (jobId: string): Promise<void> => {
+      const link = document.createElement('a')
+      link.href = `/api/v1/jobs/${encodeURIComponent(jobId)}/download-all`
+      link.click()
     }
   }
 
