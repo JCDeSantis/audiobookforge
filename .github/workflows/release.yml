@@ -48,7 +48,7 @@ jobs:
           set -euo pipefail
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             tag="${GITHUB_REF_NAME}"
-            stable=true
+            stable=false
           else
             tag="${INPUT_TAG}"
             stable="${INPUT_STABLE:-false}"

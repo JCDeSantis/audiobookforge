@@ -173,8 +173,9 @@ This repo includes coordinated GitHub Actions automation for Windows and Docker 
 Release behavior:
 
 - Pushes and pull requests run validation
-- An exact `v<package version>` tag stages Windows installer/portable assets and the universal Docker image
+- An exact `v<package version>` tag builds Windows installer/portable assets and validates the universal Docker image
 - Stable publication requires CPU image validation, security scanning, and a real NVIDIA CUDA smoke test
+- Tag pushes validate only; stable publication requires an explicit approved workflow dispatch
 - The workflow publishes immutable version/SHA image tags, SBOM, provenance, licenses, and Windows assets together
 - See the [release acceptance matrix](docs/release-acceptance.md) for required evidence and rollback rules
 

@@ -23,9 +23,9 @@ Stable publication requires every row below to pass from the exact immutable rel
 4. Run Docker ABS private-network and public-HTTPS acceptance.
 5. Run the real NVIDIA smoke job and confirm diagnostics report CUDA.
 6. Review vulnerability, SBOM, provenance, and third-party license output.
-7. Bump `package.json` only after acceptance passes, commit the candidate, and create the matching immutable `v<version>` tag.
-8. Dispatch the coordinated workflow with stable publishing disabled for a staged dry run.
-9. Review all staged artifacts, then use the approved stable tag workflow. Never reuse a tag or overwrite a versioned image.
+7. Bump `package.json` only after acceptance passes, commit the candidate, and push the matching immutable `v<version>` tag. Tag pushes validate but never publish stable artifacts automatically.
+8. If another candidate run is needed, dispatch the coordinated workflow for that existing tag with stable publishing disabled.
+9. Review all validation evidence, then manually dispatch the same immutable tag with `publish_stable=true`. This is the only path that runs the required NVIDIA gate and publishes Windows/Docker artifacts. Never reuse a tag or overwrite a versioned image.
 
 ## Rollback
 
