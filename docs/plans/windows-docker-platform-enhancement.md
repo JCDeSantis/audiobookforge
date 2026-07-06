@@ -31,9 +31,9 @@ Every milestone must leave Windows tests, typechecks, and the production build p
 
 Completed foundations include the branch/baseline, dependency boundaries, atomic migrations, artifact ownership and retention, shared renderer client, Windows CPU/CUDA fallback, authenticated web runtime, resumable upload storage, universal-image scaffold, browser upload UI, persistent server queue, CPU/CUDA server transcription, result downloads, web settings/storage/diagnostics, and secure Docker ABS login/browsing.
 
-The current full gate is 32 test files and 122 tests, plus Node/web/server typechecks, lint, web/server production builds, and the Windows production build. Docker cannot be built or hardware-qualified on the current workstation because a Docker engine and NVIDIA container host are not available.
+The current local gate is 36 test files and 134 tests, plus Node/web/server typechecks, lint, web/server production builds, and the Windows production build. GitHub Actions now also validates Linux server isolation and builds/starts the universal image on a CPU-only host. NVIDIA hardware qualification remains unavailable on the current workstation.
 
-Work still required before release candidate: finish shared checkpoint/segment behavior in the server worker; add Docker ABS audio retrieval, EPUB retrieval, and subtitle upload; finish browser-restart upload resume and Download All; complete cleanup/retention UI; harden ENOSPC, abrupt termination, ranges/backpressure, and secret redaction; run browser and Docker CPU/GPU acceptance; add coordinated release automation; and finish deployment/recovery documentation.
+Work still required before release candidate: finish shared checkpoint/segment behavior in the server worker; complete browser end-to-end coverage and secret-redaction review; run real NVIDIA transcription acceptance; add coordinated stable release automation with vulnerability/SBOM evidence; and finish deployment/recovery documentation.
 
 ## Architecture
 

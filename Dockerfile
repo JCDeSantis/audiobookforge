@@ -1,13 +1,19 @@
 # syntax=docker/dockerfile:1.7
 
 ARG WHISPER_VERSION=v1.8.3
+ARG WHISPER_COMMIT=2eeeba56e9edd762b4b38467bab96c2517163158
 
 FROM ubuntu:22.04 AS whisper-cpu
 ARG WHISPER_VERSION
+ARG WHISPER_COMMIT
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential ca-certificates cmake git \
     && rm -rf /var/lib/apt/lists/*
-RUN git clone --branch "${WHISPER_VERSION}" --depth 1 https://github.com/ggml-org/whisper.cpp.git /src/whisper.cpp \
+RUN git init /src/whisper.cpp \
+    && git -C /src/whisper.cpp remote add origin https://github.com/ggml-org/whisper.cpp.git \
+    && git -C /src/whisper.cpp fetch --depth 1 origin "${WHISPER_COMMIT}" \
+    && git -C /src/whisper.cpp checkout --detach FETCH_HEAD \
+    && test "$(git -C /src/whisper.cpp rev-parse HEAD)" = "${WHISPER_COMMIT}" \
     && cmake -S /src/whisper.cpp -B /src/whisper.cpp/build \
       -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_CUDA=OFF \
     && cmake --build /src/whisper.cpp/build --config Release --target whisper-cli -j"$(nproc)" \
@@ -15,10 +21,15 @@ RUN git clone --branch "${WHISPER_VERSION}" --depth 1 https://github.com/ggml-or
 
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04 AS whisper-cuda
 ARG WHISPER_VERSION
+ARG WHISPER_COMMIT
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     build-essential ca-certificates cmake git \
     && rm -rf /var/lib/apt/lists/*
-RUN git clone --branch "${WHISPER_VERSION}" --depth 1 https://github.com/ggml-org/whisper.cpp.git /src/whisper.cpp \
+RUN git init /src/whisper.cpp \
+    && git -C /src/whisper.cpp remote add origin https://github.com/ggml-org/whisper.cpp.git \
+    && git -C /src/whisper.cpp fetch --depth 1 origin "${WHISPER_COMMIT}" \
+    && git -C /src/whisper.cpp checkout --detach FETCH_HEAD \
+    && test "$(git -C /src/whisper.cpp rev-parse HEAD)" = "${WHISPER_COMMIT}" \
     && cmake -S /src/whisper.cpp -B /src/whisper.cpp/build \
       -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_CUDA=ON \
     && cmake --build /src/whisper.cpp/build --config Release --target whisper-cli -j"$(nproc)" \
