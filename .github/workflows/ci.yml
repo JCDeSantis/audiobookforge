@@ -52,8 +52,15 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
       - name: Build the universal CPU/CUDA image
-        run: docker build --tag audiobookforge:ci .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: audiobookforge:ci
+          cache-from: type=gha,scope=universal-linux-amd64
+          cache-to: type=gha,mode=max,scope=universal-linux-amd64
       - name: Start without an NVIDIA runtime
         run: >-
           docker run --detach --name audiobookforge-ci

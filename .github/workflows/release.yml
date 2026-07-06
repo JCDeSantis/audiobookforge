@@ -101,7 +101,15 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.metadata.outputs.tag }}
-      - run: docker build --tag audiobookforge:release-candidate .
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the universal release candidate image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: audiobookforge:release-candidate
+          cache-from: type=gha,scope=universal-linux-amd64
+          cache-to: type=gha,mode=max,scope=universal-linux-amd64
       - name: CPU-only startup smoke test
         run: |
           docker run --detach --name abf-release-cpu --publish 127.0.0.1:3000:3000 --env ABF_WEB_PASSWORD=release-test audiobookforge:release-candidate
@@ -128,7 +136,14 @@ jobs:
       - uses: actions/checkout@v6
         with:
           ref: ${{ needs.metadata.outputs.tag }}
-      - run: docker build --tag audiobookforge:nvidia-candidate .
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the NVIDIA smoke-test image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: audiobookforge:nvidia-candidate
+          cache-from: type=gha,scope=universal-linux-amd64
       - name: Run a real CUDA Whisper transcription
         shell: bash
         run: |
@@ -174,6 +189,7 @@ jobs:
           push: true
           provenance: mode=max
           sbom: true
+          cache-from: type=gha,scope=universal-linux-amd64
           tags: |
             ${{ needs.metadata.outputs.image }}:${{ needs.metadata.outputs.version }}
             ${{ needs.metadata.outputs.image }}:sha-${{ needs.metadata.outputs.sha }}
