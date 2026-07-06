@@ -1,12 +1,12 @@
 # Audiobook Forge
 
 ![Version](https://img.shields.io/badge/version-v1.1-d92a3d?style=for-the-badge)
-![Platform](https://img.shields.io/badge/platform-Windows-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
+![Platform](https://img.shields.io/badge/platform-Windows%20%2B%20Docker-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 ![License](https://img.shields.io/badge/license-MIT-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 
 ![Audiobook Forge logo](docs/readme-assets/audiobook-forge-logo.png)
 
-Audiobook Forge is a Windows desktop companion app for generating audiobook subtitle files with [Audiobookshelf](https://github.com/advplyr/audiobookshelf) integration.
+Audiobook Forge is a Windows desktop and single-user Docker web application for generating audiobook subtitle files with [Audiobookshelf](https://github.com/advplyr/audiobookshelf) integration.
 
 It is built for users who want a focused workflow for selecting books, choosing a Whisper model, queueing subtitle jobs, and generating `.srt` files that can be saved locally or uploaded back into Audiobookshelf automatically.
 
@@ -39,6 +39,10 @@ Instead, Audiobook Forge helps create subtitle files for workflows such as:
 - Show whole-run progress, current task progress, elapsed time, and live transcription text
 - Split subtitle output across multi-file audiobooks
 - Add optional EPUB context to improve vocabulary and proper-name recognition
+- Run one universal Docker image on CPU-only or NVIDIA CUDA hosts
+- Upload audiobook files through the authenticated web interface with resumable chunks
+- Automatically fall back from classified CUDA failures to CPU without discarding completed segments
+- Download and safely clean up application-managed uploads, checkpoints, and results
 
 ## Interface Preview
 
@@ -76,6 +80,12 @@ Portable build note:
 
 - after extracting the portable zip, run `Audiobook Forge.exe` from the unpacked folder
 
+### Docker Web Runtime
+
+The Docker runtime uses the same product and queue workflow through an authenticated browser interface. It supports browser uploads and Audiobookshelf sources, one processing worker, automatic CUDA selection, CPU fallback, result downloads, retention, and managed cleanup.
+
+See the [Docker deployment guide](docs/docker.md) for CPU/GPU Compose commands, NVIDIA requirements, HTTPS and Audiobookshelf networking, backups, upgrades, and troubleshooting.
+
 ## How To Use It
 
 ### Audiobookshelf Workflow
@@ -103,10 +113,11 @@ Portable build note:
 ## Security And Privacy Notes
 
 - Your Audiobookshelf password is sent to your server only during sign-in and is never stored
-- Audiobook Forge stores only the returned access and refresh tokens through the OS credential store using `keytar`
+- Windows stores returned access and refresh tokens through the OS credential store using `keytar`
+- Docker encrypts returned Audiobookshelf session tokens at rest with AES-256-GCM and a persistent server secret
 - Authentication tokens are not written into the app settings JSON file as plaintext
-- Remote Audiobookshelf URLs should use `https://`
-- Username/password sign-in requires `https://`, except for Audiobookshelf running on the same computer
+- Public Audiobookshelf URLs require HTTPS; validated private/LAN and Docker-network HTTP destinations show a warning
+- Docker requires a single-user web password and uses signed HTTP-only sessions, CSRF/origin checks, request limits, and login throttling
 - Generated subtitles may be saved locally as a fallback if an Audiobookshelf upload fails
 
 ## AI Transcription Disclaimer
@@ -131,7 +142,7 @@ Spoken Page is the playback-side companion app for Audiobookshelf users who want
 
 ## How It Works
 
-Audiobook Forge is built as an Electron desktop app with a React renderer and a main-process transcription pipeline.
+Audiobook Forge uses one React renderer with Electron and authenticated HTTP adapters. Windows packages it as an Electron desktop app; Docker serves the same interface from a Node web runtime. Shared persistence, artifacts, subtitle formats, uploads, queue behavior, and compute fallback rules keep the two runtimes aligned.
 
 That pipeline is responsible for:
 
@@ -154,17 +165,18 @@ The script prints word error rate, edit count, and word counts as JSON so model 
 
 ## Release Automation
 
-This repo includes GitHub Actions-based release automation for Windows builds:
+This repo includes coordinated GitHub Actions automation for Windows and Docker builds:
 
 - validation workflow: [.github/workflows/ci.yml](.github/workflows/ci.yml)
-- release workflow: [.github/workflows/release-windows.yml](.github/workflows/release-windows.yml)
+- release workflow: [.github/workflows/release.yml](.github/workflows/release.yml)
 
 Release behavior:
 
 - Pushes and pull requests run validation
-- Version tags such as `v1.1` build Windows release assets
-- The release workflow uploads both the installer and the portable unpacked zip to GitHub Releases
-- Workflow dispatch can be used for manual release builds
+- An exact `v<package version>` tag stages Windows installer/portable assets and the universal Docker image
+- Stable publication requires CPU image validation, security scanning, and a real NVIDIA CUDA smoke test
+- The workflow publishes immutable version/SHA image tags, SBOM, provenance, licenses, and Windows assets together
+- See the [release acceptance matrix](docs/release-acceptance.md) for required evidence and rollback rules
 
 ## Credits
 

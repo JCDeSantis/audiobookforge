@@ -29,11 +29,11 @@ Every milestone must leave Windows tests, typechecks, and the production build p
 
 ## Implementation status (2026-07-05)
 
-Completed foundations include the branch/baseline, dependency boundaries, atomic migrations, artifact ownership and retention, shared renderer client, Windows CPU/CUDA fallback, authenticated web runtime, resumable upload storage, universal-image scaffold, browser upload UI, persistent server queue, CPU/CUDA server transcription, result downloads, web settings/storage/diagnostics, and secure Docker ABS login/browsing.
+Completed foundations include the branch/baseline, dependency boundaries, atomic migrations, artifact ownership and retention, shared renderer client, Windows CPU/CUDA fallback, authenticated web runtime, resumable upload storage, universal CPU/CUDA image, browser upload UI, persistent server queue, segment checkpoints, classified CPU fallback, result downloads, web settings/storage/diagnostics, encrypted Docker ABS sessions, portable ABS retrieval/upload, browser acceptance coverage, and coordinated release automation.
 
-The current local gate is 36 test files and 134 tests, plus Node/web/server typechecks, lint, web/server production builds, and the Windows production build. GitHub Actions now also validates Linux server isolation and builds/starts the universal image on a CPU-only host. NVIDIA hardware qualification remains unavailable on the current workstation.
+The current local gate is 37 unit/integration files with 140 tests plus two Chromium end-to-end flows, Node/web/server typechecks, lint, web/server production builds, and the Windows production build. GitHub Actions validates Linux server isolation, the browser suite, and universal-image startup on a CPU-only host. NVIDIA hardware qualification remains unavailable on the current workstation.
 
-Work still required before release candidate: finish shared checkpoint/segment behavior in the server worker; complete browser end-to-end coverage and secret-redaction review; run real NVIDIA transcription acceptance; add coordinated stable release automation with vulnerability/SBOM evidence; and finish deployment/recovery documentation.
+Deployment, recovery, networking, security, and release-acceptance documentation is complete. Remaining release-candidate gates are a full packaged Windows/Docker acceptance pass, a real NVIDIA transcription smoke test, review of vulnerability/SBOM/provenance evidence, and the post-acceptance version bump with its matching immutable tag. Stable publication remains blocked until those gates pass.
 
 ## Architecture
 
