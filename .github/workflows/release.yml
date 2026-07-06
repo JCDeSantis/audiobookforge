@@ -3,7 +3,7 @@ name: Coordinated Release
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
   workflow_dispatch:
     inputs:
       release_tag:
@@ -93,6 +93,24 @@ jobs:
             dist/*-win-unpacked.zip
             dist/THIRD_PARTY_LICENSES.json
 
+  web-server:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.metadata.outputs.tag }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install without desktop native lifecycle scripts
+        run: npm ci --ignore-scripts
+      - run: npx vitest run src/core src/server src/shared
+      - run: npm run build:server
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
   docker-cpu-security:
     needs: metadata
     runs-on: ubuntu-24.04
@@ -161,7 +179,7 @@ jobs:
 
   publish:
     if: needs.metadata.outputs.stable == 'true'
-    needs: [metadata, windows, docker-cpu-security, nvidia-smoke]
+    needs: [metadata, windows, web-server, docker-cpu-security, nvidia-smoke]
     runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ github.token }}
