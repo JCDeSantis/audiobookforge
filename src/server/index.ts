@@ -1,7 +1,8 @@
 import { createWebServer } from './httpServer'
-import { loadServerRuntimeConfig } from './runtimeConfig'
+import { getServerRuntimeWarnings, loadServerRuntimeConfig } from './runtimeConfig'
 
 const config = loadServerRuntimeConfig()
+for (const warning of getServerRuntimeWarnings(config)) console.warn(warning)
 const runtime = createWebServer(config)
 
 runtime.server.listen(config.port, config.host, () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { resolve } from 'path'
-import { loadServerRuntimeConfig } from '../runtimeConfig'
+import { getServerRuntimeWarnings, loadServerRuntimeConfig } from '../runtimeConfig'
 
 describe('server runtime boundary', () => {
   it('creates Docker-safe defaults without Electron paths', () => {
@@ -26,5 +26,17 @@ describe('server runtime boundary', () => {
     expect(() =>
       loadServerRuntimeConfig({ ABF_WEB_PASSWORD: 'secret', ABF_TRUST_PROXY: 'yes' })
     ).toThrow('ABF_TRUST_PROXY')
+  })
+
+  it('warns when the password is exposed directly through the environment', () => {
+    const direct = loadServerRuntimeConfig({ ABF_WEB_PASSWORD: 'secret' })
+    const secretFile = loadServerRuntimeConfig({
+      ABF_WEB_PASSWORD_FILE: '/run/secrets/abf_password'
+    })
+
+    expect(getServerRuntimeWarnings(direct)).toEqual([
+      expect.stringContaining('Prefer ABF_WEB_PASSWORD_FILE or a Docker secret')
+    ])
+    expect(getServerRuntimeWarnings(secretFile)).toEqual([])
   })
 })

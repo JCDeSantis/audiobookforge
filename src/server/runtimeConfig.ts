@@ -16,6 +16,16 @@ export interface ServerRuntimeConfig {
   whisperCudaPath: string
 }
 
+export function getServerRuntimeWarnings(config: ServerRuntimeConfig): string[] {
+  const warnings: string[] = []
+  if (!config.passwordFile && config.password) {
+    warnings.push(
+      'ABF_WEB_PASSWORD is set directly in the environment. Prefer ABF_WEB_PASSWORD_FILE or a Docker secret to reduce credential exposure.'
+    )
+  }
+  return warnings
+}
+
 function parsePort(value: string | undefined): number {
   if (value === undefined || value.trim() === '') return 3000
   const port = Number(value)
