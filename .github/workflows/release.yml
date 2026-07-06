@@ -1,0 +1,182 @@
+name: Coordinated Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing v<package version> tag to validate
+        required: true
+        type: string
+      publish_stable:
+        description: Publish stable Windows and GHCR artifacts after every gate passes
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: coordinated-release
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      stable: ${{ steps.meta.outputs.stable }}
+      image: ${{ steps.meta.outputs.image }}
+      sha: ${{ steps.meta.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: meta
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.release_tag }}
+          INPUT_STABLE: ${{ inputs.publish_stable }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            tag="${GITHUB_REF_NAME}"
+            stable=true
+          else
+            tag="${INPUT_TAG}"
+            stable="${INPUT_STABLE:-false}"
+          fi
+          git rev-parse --verify "refs/tags/${tag}"
+          git checkout --detach "refs/tags/${tag}"
+          version=$(node -p "require('./package.json').version")
+          test "${tag}" = "v${version}"
+          sha=$(git rev-parse HEAD)
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "stable=${stable}" >> "${GITHUB_OUTPUT}"
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+
+  windows:
+    needs: metadata
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.metadata.outputs.tag }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx electron-builder --win nsis --publish never
+      - run: npx electron-builder --win --dir --publish never
+      - run: npm run licenses
+      - name: Package unpacked build
+        shell: pwsh
+        run: Compress-Archive -Path "dist/win-unpacked/*" -DestinationPath "dist/audiobookforge-${{ needs.metadata.outputs.version }}-win-unpacked.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-${{ needs.metadata.outputs.version }}
+          path: |
+            dist/*-setup.exe
+            dist/*-win-unpacked.zip
+            dist/THIRD_PARTY_LICENSES.json
+
+  docker-cpu-security:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.metadata.outputs.tag }}
+      - run: docker build --tag audiobookforge:release-candidate .
+      - name: CPU-only startup smoke test
+        run: |
+          docker run --detach --name abf-release-cpu --publish 127.0.0.1:3000:3000 --env ABF_WEB_PASSWORD=release-test audiobookforge:release-candidate
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:3000/healthz && exit 0
+            sleep 2
+          done
+          docker logs abf-release-cpu
+          exit 1
+      - name: Scan high and critical vulnerabilities
+        uses: docker/scout-action@dd36f5b0295baffa006aa6623371f226cc03e506
+        with:
+          command: cves
+          image: local://audiobookforge:release-candidate
+          only-severities: critical,high
+          exit-code: true
+
+  nvidia-smoke:
+    if: needs.metadata.outputs.stable == 'true'
+    needs: metadata
+    runs-on: [self-hosted, linux, x64, nvidia]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.metadata.outputs.tag }}
+      - run: docker build --tag audiobookforge:nvidia-candidate .
+      - name: Run a real CUDA Whisper transcription
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .nvidia-smoke
+          curl --fail --location --output .nvidia-smoke/ggml-tiny.en.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin
+          docker run --rm --user "$(id -u):$(id -g)" --entrypoint ffmpeg \
+            --volume "${PWD}/.nvidia-smoke:/smoke" audiobookforge:nvidia-candidate \
+            -f lavfi -i "sine=frequency=1000:duration=1" -ar 16000 -ac 1 /smoke/input.wav -y
+          docker run --rm --gpus all --user "$(id -u):$(id -g)" \
+            --entrypoint /opt/audiobookforge/whisper/cuda/whisper-cli \
+            --volume "${PWD}/.nvidia-smoke:/smoke" audiobookforge:nvidia-candidate \
+            -m /smoke/ggml-tiny.en.bin -f /smoke/input.wav -osrt -of /smoke/output
+          test -f .nvidia-smoke/output.srt
+
+  publish:
+    if: needs.metadata.outputs.stable == 'true'
+    needs: [metadata, windows, docker-cpu-security, nvidia-smoke]
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.metadata.outputs.tag }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v7
+        with:
+          name: windows-${{ needs.metadata.outputs.version }}
+          path: release-assets
+      - name: Stage a draft GitHub release
+        run: |
+          gh release view "${{ needs.metadata.outputs.tag }}" >/dev/null 2>&1 || \
+            gh release create "${{ needs.metadata.outputs.tag }}" --draft --verify-tag --generate-notes --title "Audiobook Forge ${{ needs.metadata.outputs.tag }}"
+          gh release upload "${{ needs.metadata.outputs.tag }}" release-assets/* --clobber
+      - name: Authenticate to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - uses: docker/setup-buildx-action@v3
+      - name: Publish immutable Docker tags with SBOM and provenance
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: |
+            ${{ needs.metadata.outputs.image }}:${{ needs.metadata.outputs.version }}
+            ${{ needs.metadata.outputs.image }}:sha-${{ needs.metadata.outputs.sha }}
+            ${{ needs.metadata.outputs.image }}:latest
+      - name: Publish the coordinated GitHub release
+        run: gh release edit "${{ needs.metadata.outputs.tag }}" --draft=false

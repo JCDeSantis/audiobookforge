@@ -19,6 +19,7 @@
     "lint": "eslint --cache .",
     "test": "vitest run",
     "score:srt": "node scripts/score-srt-wer.mjs",
+    "licenses": "node scripts/generate-license-notices.mjs",
     "test:watch": "vitest",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:server": "tsc --noEmit -p tsconfig.server.json --composite false",
