@@ -28,6 +28,7 @@ describe('authenticated web runtime', () => {
       sessionSecretFile: join(root, 'session.key'),
       webRoot,
       ffmpegPath: 'ffmpeg',
+      ffprobePath: 'ffprobe',
       whisperCpuPath: 'whisper-cpu',
       whisperCudaPath: 'whisper-cuda'
     }

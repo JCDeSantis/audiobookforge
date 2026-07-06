@@ -174,8 +174,10 @@ function releaseJobArtifacts(
   artifacts: ArtifactStore,
   uploads: UploadStore
 ): void {
-  for (const artifactId of job.resultArtifactIds ?? []) {
-    if (artifacts.get(artifactId)) artifacts.removeReference(artifactId, `job:${job.id}`)
+  for (const artifact of artifacts.list()) {
+    if (artifact.references.includes(`job:${job.id}`)) {
+      artifacts.removeReference(artifact.id, `job:${job.id}`)
+    }
   }
   if (job.uploadSessionId) uploads.releaseFromJob(job.uploadSessionId, job.id)
 }

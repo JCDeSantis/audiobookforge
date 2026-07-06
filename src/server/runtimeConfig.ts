@@ -11,6 +11,7 @@ export interface ServerRuntimeConfig {
   sessionSecretFile: string
   webRoot: string
   ffmpegPath: string
+  ffprobePath: string
   whisperCpuPath: string
   whisperCudaPath: string
 }
@@ -55,6 +56,7 @@ export function loadServerRuntimeConfig(
     ),
     webRoot: resolve(environment.ABF_WEB_ROOT?.trim() || resolve(process.cwd(), 'out', 'renderer')),
     ffmpegPath: environment.ABF_FFMPEG_PATH?.trim() || '/usr/bin/ffmpeg',
+    ffprobePath: environment.ABF_FFPROBE_PATH?.trim() || '/usr/bin/ffprobe',
     whisperCpuPath:
       environment.ABF_WHISPER_CPU_PATH?.trim() || '/opt/audiobookforge/whisper/cpu/whisper-cli',
     whisperCudaPath:

@@ -4,6 +4,7 @@ import {
   buildSegments,
   buildSegmentsFromChapters,
   findLargeInternalGaps,
+  mergeSrts,
   offsetSrtContent,
   replaceCueRange
 } from '../segments'
@@ -116,5 +117,16 @@ describe('buildSegments', () => {
     )
 
     expect(result).toContain('00:00:01,000 --> 00:00:02,000')
+  })
+
+  it('renumbers checkpointed segment cues when merging them', () => {
+    const result = mergeSrts([
+      '1\n00:00:00,000 --> 00:00:01,000\nFirst\n',
+      '1\n00:20:00,000 --> 00:20:01,000\nSecond\n'
+    ])
+
+    expect(result).toBe(
+      '1\n00:00:00,000 --> 00:00:01,000\nFirst\n\n2\n00:20:00,000 --> 00:20:01,000\nSecond\n'
+    )
   })
 })

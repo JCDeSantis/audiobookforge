@@ -13,13 +13,17 @@ import type {
 } from '../../shared/types'
 import { classifyCudaFailure } from '../../shared/computeFallback'
 import { convertSrtToFormat } from '../../shared/subtitleFormats'
+import { mergeSrts, offsetSrtContent } from '../../shared/subtitleSegments'
 import { ServerModelStore } from './modelStore'
 import { extractEpubVocabulary } from '../../core/context/epubVocabulary'
+import { ServerCheckpointStore } from './checkpointStore'
 import {
   assertFreeProcessingSpace,
   estimateProcessingBytes,
   isDiskFullError
 } from '../../core/storage/processingSpace'
+
+const SEGMENT_SECONDS = 20 * 60
 
 interface ProcessResult {
   code: number | null
@@ -35,17 +39,20 @@ export interface ServerTranscriptionResult {
 
 export interface ServerTranscriberConfig {
   ffmpegPath: string
+  ffprobePath: string
   whisperCpuPath: string
   whisperCudaPath: string
 }
 
 function safeBaseName(value: string): string {
-  return value
-    .replace(/\.(m4b|mp3)$/i, '')
-    .replace(/[^a-zA-Z0-9 _.-]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 180) || 'transcript'
+  return (
+    value
+      .replace(/\.(m4b|mp3)$/i, '')
+      .replace(/[^a-zA-Z0-9 _.-]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 180) || 'transcript'
+  )
 }
 
 export class ServerTranscriber {
@@ -95,9 +102,7 @@ export class ServerTranscriber {
       const wavPath = join(jobTemp, 'audio.wav')
       writeFileSync(
         listPath,
-        audioPaths
-          .map((path) => `file '${path.replace(/'/g, "'\\''")}'`)
-          .join('\n'),
+        audioPaths.map((path) => `file '${path.replace(/'/g, "'\\''")}'`).join('\n'),
         'utf-8'
       )
       onProgress({ phase: 'preparing', percent: 0 })
@@ -130,8 +135,10 @@ export class ServerTranscriber {
       }
       onProgress({ phase: 'preparing', percent: 100 })
 
-      const outputBase = join(jobTemp, 'transcript')
       const promptText = epubPath ? await extractEpubVocabulary(epubPath) : ''
+      const duration = await this.probeDuration(wavPath, signal)
+      const segmentCount = Math.max(1, Math.ceil(duration / SEGMENT_SECONDS))
+      const checkpoints = new ServerCheckpointStore(this.paths, this.artifacts, jobId, segmentCount)
       let backend: ComputeBackend =
         this.getComputePreference() === 'cpu'
           ? 'cpu'
@@ -139,59 +146,128 @@ export class ServerTranscriber {
             ? 'cuda'
             : 'cpu'
       let fallbackReason: string | null = null
-      let whisperResult = await this.runWhisper(
-        backend === 'cuda' ? this.config.whisperCudaPath : this.config.whisperCpuPath,
-        modelPath,
-        wavPath,
-        outputBase,
-        backend,
-        onProgress,
-        signal,
-        promptText
-      )
-      if (whisperResult.code !== 0 && backend === 'cuda') {
-        fallbackReason = classifyCudaFailure(whisperResult.code, whisperResult.stderr)
-        if (fallbackReason) {
-          rmSync(`${outputBase}.srt`, { force: true })
-          backend = 'cpu'
+      const completedSrts: string[] = []
+      for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
+        if (checkpoints.has(segmentIndex)) {
+          completedSrts.push(checkpoints.read(segmentIndex))
           onProgress({
             phase: 'transcribing',
-            percent: 0,
-            liveText: `CUDA ${fallbackReason}; retrying on CPU`
+            percent: 100,
+            overallPercent: Math.round(((segmentIndex + 1) / segmentCount) * 100),
+            segmentIndex,
+            segmentCount,
+            liveText: 'Restored completed checkpoint'
           })
-          whisperResult = await this.runWhisper(
-            this.config.whisperCpuPath,
-            modelPath,
-            wavPath,
-            outputBase,
-            'cpu',
-            onProgress,
-            signal,
-            promptText
+          continue
+        }
+        const startSeconds = segmentIndex * SEGMENT_SECONDS
+        const segmentDuration = Math.min(SEGMENT_SECONDS, Math.max(0, duration - startSeconds))
+        const segmentWav = join(jobTemp, `segment-${segmentIndex}.wav`)
+        const outputBase = join(jobTemp, `segment-${segmentIndex}`)
+        if (segmentCount === 1) {
+          // The full prepared WAV is already in the correct Whisper format.
+        } else {
+          const extracted = await this.run(
+            this.config.ffmpegPath,
+            [
+              '-hide_banner',
+              '-y',
+              '-ss',
+              String(startSeconds),
+              '-t',
+              String(segmentDuration),
+              '-i',
+              wavPath,
+              '-c:a',
+              'pcm_s16le',
+              segmentWav
+            ],
+            signal
           )
+          if (extracted.code !== 0) {
+            if (isDiskFullError(extracted.stderr)) {
+              throw new Error('Transcription ran out of disk space while preparing a segment.')
+            }
+            throw new Error(`Audio segment preparation failed: ${extracted.stderr.slice(-800)}`)
+          }
         }
-      }
-      if (whisperResult.code !== 0) {
-        if (isDiskFullError(whisperResult.stderr)) {
-          throw new Error('Transcription ran out of disk space while Whisper was writing results.')
+        const whisperInput = segmentCount === 1 ? wavPath : segmentWav
+        const progress = (event: Omit<WhisperProgressEvent, 'jobId'>): void =>
+          onProgress({
+            ...event,
+            overallPercent: Math.round(
+              ((segmentIndex + Math.max(0, Math.min(100, event.percent)) / 100) / segmentCount) *
+                100
+            ),
+            segmentIndex,
+            segmentCount
+          })
+        let whisperResult = await this.runWhisper(
+          backend === 'cuda' ? this.config.whisperCudaPath : this.config.whisperCpuPath,
+          modelPath,
+          whisperInput,
+          outputBase,
+          backend === 'cuda' ? 'cuda' : 'cpu',
+          progress,
+          signal,
+          promptText
+        )
+        if (whisperResult.code !== 0 && backend === 'cuda') {
+          fallbackReason = classifyCudaFailure(whisperResult.code, whisperResult.stderr)
+          if (fallbackReason) {
+            rmSync(`${outputBase}.srt`, { force: true })
+            backend = 'cpu'
+            progress({
+              phase: 'transcribing',
+              percent: 0,
+              liveText: `CUDA ${fallbackReason}; retrying this segment on CPU`
+            })
+            whisperResult = await this.runWhisper(
+              this.config.whisperCpuPath,
+              modelPath,
+              whisperInput,
+              outputBase,
+              'cpu',
+              progress,
+              signal,
+              promptText
+            )
+          }
         }
-        throw new Error(`Whisper transcription failed: ${whisperResult.stderr.slice(-1000)}`)
+        if (whisperResult.code !== 0) {
+          if (isDiskFullError(whisperResult.stderr)) {
+            throw new Error(
+              'Transcription ran out of disk space while Whisper was writing results.'
+            )
+          }
+          throw new Error(`Whisper transcription failed: ${whisperResult.stderr.slice(-1000)}`)
+        }
+        const sourceSrt = `${outputBase}.srt`
+        if (!existsSync(sourceSrt))
+          throw new Error('Whisper completed without producing subtitles.')
+        const segmentSrt = offsetSrtContent(readFileSync(sourceSrt, 'utf-8'), startSeconds)
+        checkpoints.commit(segmentIndex, segmentSrt)
+        completedSrts.push(segmentSrt)
+        rmSync(segmentWav, { force: true })
+        rmSync(sourceSrt, { force: true })
       }
-      const sourceSrt = `${outputBase}.srt`
-      if (!existsSync(sourceSrt)) throw new Error('Whisper completed without producing subtitles.')
-      const srt = readFileSync(sourceSrt, 'utf-8')
+      const srt = mergeSrts(completedSrts)
       const baseName = safeBaseName(title || basename(audioPaths[0], extname(audioPaths[0])))
       const requestedFormats = Array.from(new Set<SubtitleFormat>(['srt', ...formats]))
       const resultArtifactIds: string[] = []
       for (const format of requestedFormats) {
         const resultPath = join(resultDir, `${baseName}.${format}`)
         writeFileSync(resultPath, convertSrtToFormat(srt, format), 'utf-8')
-        const artifact = this.artifacts.register({
-          category: 'result',
-          path: resultPath,
-          expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
-          references: [`job:${jobId}`]
-        })
+        const existing = this.artifacts.list().find((artifact) => artifact.path === resultPath)
+        const artifact =
+          existing ??
+          this.artifacts.register({
+            category: 'result',
+            path: resultPath,
+            expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+            references: [`job:${jobId}`]
+          })
+        if (existing) this.artifacts.addReference(existing.id, `job:${jobId}`)
         resultArtifactIds.push(artifact.id)
       }
       onProgress({ phase: 'done', percent: 100 })
@@ -207,6 +283,27 @@ export class ServerTranscriber {
     if (!existsSync(this.config.whisperCudaPath)) return false
     const result = await this.run('nvidia-smi', ['-L'], signal).catch(() => null)
     return result?.code === 0
+  }
+
+  private async probeDuration(wavPath: string, signal: AbortSignal): Promise<number> {
+    const result = await this.run(
+      this.config.ffprobePath,
+      [
+        '-v',
+        'error',
+        '-show_entries',
+        'format=duration',
+        '-of',
+        'default=noprint_wrappers=1:nokey=1',
+        wavPath
+      ],
+      signal
+    )
+    const duration = Number.parseFloat(result.stdout.trim())
+    if (result.code !== 0 || !Number.isFinite(duration) || duration <= 0) {
+      throw new Error(`Unable to determine prepared audio duration: ${result.stderr.slice(-800)}`)
+    }
+    return duration
   }
 
   private runWhisper(
