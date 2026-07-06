@@ -45,6 +45,8 @@ jobs:
       - run: npx vitest run src/core src/server src/shared
       - run: npm run build:web
       - run: npm run build:server
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
 
   docker-cpu:
     name: Universal image on CPU-only host

@@ -8,3 +8,5 @@ out
 .eslintcache
 *.log*
 secrets/
+test-results/
+playwright-report/
