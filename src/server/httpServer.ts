@@ -204,7 +204,8 @@ export interface WebServerRuntime {
 
 export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
   const configuredPassword = loadConfiguredPassword(config)
-  const sessions = new SessionManager(loadOrCreateSessionSecret(config.sessionSecretFile))
+  const sessionSecret = loadOrCreateSessionSecret(config.sessionSecretFile)
+  const sessions = new SessionManager(sessionSecret)
   const instanceLock = new ServerInstanceLock(config.dataPaths)
   instanceLock.acquire()
   const { limiter, events, artifacts, retention, uploads, settings, absClient, absSessions, queue, models, worker } = (() => {
@@ -220,7 +221,7 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
       uploads.load()
       const settings = new AppSettingsStore(config.dataPaths.settingsFile)
       const absClient = new ServerAbsClient()
-      const absSessions = new ServerAbsSessionStore(config.dataPaths)
+      const absSessions = new ServerAbsSessionStore(config.dataPaths, sessionSecret)
       const absJobs = new ServerAbsJobAdapter(config.dataPaths, absSessions, absClient, artifacts)
       const queue = new ServerQueue(config.dataPaths, Date.now, (jobs) =>
         events.publish('queue.updated', jobs)
