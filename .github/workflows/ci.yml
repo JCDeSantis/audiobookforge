@@ -51,7 +51,9 @@ jobs:
   docker-cpu:
     name: Universal image on CPU-only host
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # A cold PR cache can spend most of an hour compiling both Whisper variants
+    # and exporting the reusable max-mode cache. Warm runs remain a few minutes.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v3
