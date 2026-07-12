@@ -1,4 +1,5 @@
 import React from 'react'
+import { getAppClient } from '../lib/appClient'
 import { useAppStore } from '../store/useAppStore'
 import { WHISPER_MODELS } from '../lib/whisperModels'
 import type { WhisperModel } from '../../../shared/types'
@@ -39,14 +40,14 @@ export function JobOptionsCard(): React.JSX.Element {
       : null
 
   const handlePickOutputFolder = async (): Promise<void> => {
-    const folder = await window.electron.files.pickOutputFolder()
+    const folder = await getAppClient().files.pickOutputFolder()
     if (folder) {
       setWizardOutputFolder(folder)
     }
   }
 
   const handlePickEpub = async (): Promise<void> => {
-    const path = await window.electron.files.pickEpub()
+    const path = await getAppClient().files.pickEpub()
     if (path) {
       setWizardEpubPath(path)
     }
@@ -121,7 +122,7 @@ export function JobOptionsCard(): React.JSX.Element {
           </div>
         )}
 
-        {wizard.source && (
+        {wizard.source && wizard.source !== 'upload' && (
           <div>
             <div className="mb-1.5 text-xs font-medium text-[#f9e7e7]">
               EPUB {linkedEpub || linkedEpubSummary ? '(linked from ABS)' : '(optional)'}

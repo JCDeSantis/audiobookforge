@@ -6,19 +6,38 @@ import type {
   WhisperProgressEvent,
   WhisperStorageInfo
 } from '../../../shared/types'
-import type { AbsLoginResult } from '../../../shared/types'
+import type {
+  AbsLoginResult,
+  ComputePreference,
+  ManagedCleanupPreview,
+  ManagedStorageSummary,
+  RuntimeCapabilities
+} from '../../../shared/types'
+import type { WebUploadSelection } from '../../../shared/types'
 
-export interface ElectronAPI {
+export interface AppClient {
+  runtime: {
+    getCapabilities: () => Promise<RuntimeCapabilities>
+  }
   settings: {
     get: () => Promise<AppSettings>
     setUrl: (url: string) => Promise<void>
     setDefaultModel: (model: AppSettings['defaultModel']) => Promise<void>
+    setComputePreference: (preference: ComputePreference) => Promise<void>
   }
   files: {
     pickAudio: () => Promise<string[] | null>
     pickEpub: () => Promise<string | null>
     pickOutputFolder: () => Promise<string | null>
     showInExplorer: (path: string) => Promise<void>
+    downloadArtifact: (artifactId: string) => Promise<void>
+    downloadJobResults: (jobId: string) => Promise<void>
+  }
+  uploads: {
+    uploadFiles: (
+      files: File[],
+      onProgress: (percent: number) => void
+    ) => Promise<WebUploadSelection>
   }
   queue: {
     add: (job: Omit<TranscriptionJob, 'id' | 'status' | 'progress' | 'srtPath' | 'srtPaths' | 'qualityReport' | 'error' | 'createdAt' | 'startedAt' | 'completedAt'>) => Promise<TranscriptionJob>
@@ -49,10 +68,17 @@ export interface ElectronAPI {
   diagnostics: {
     export: () => Promise<string | null>
   }
+  storage: {
+    getSummary: () => Promise<ManagedStorageSummary>
+    previewCleanup: () => Promise<ManagedCleanupPreview>
+    executeCleanup: (token: string) => Promise<{ deletedIds: string[]; failedIds: string[] }>
+  }
 }
+
+export type ElectronAPI = AppClient
 
 declare global {
   interface Window {
-    electron: ElectronAPI
+    electron: AppClient
   }
 }

@@ -101,7 +101,7 @@ export type SubtitleFormat = 'srt' | 'vtt' | 'lrc'
 export interface TranscriptionJob {
   id: string
   status: JobStatus
-  source: 'local' | 'abs'
+  source: 'local' | 'abs' | 'upload'
   title: string
   audioFiles: string[]
   outputPath: string | null // output folder for local jobs; null for ABS
@@ -120,6 +120,17 @@ export interface TranscriptionJob {
   createdAt: number
   startedAt: number | null
   completedAt: number | null
+  uploadSessionId?: string | null
+  resultArtifactIds?: string[]
+  computeBackend?: ComputeBackend
+  computeFallbackReason?: string | null
+  deliveryWarning?: string | null
+}
+
+export interface WebUploadSelection {
+  sessionId: string
+  audioFileNames: string[]
+  epubFileName: string | null
 }
 
 // ─── ABS ─────────────────────────────────────────────────────────────────────
@@ -153,6 +164,7 @@ export interface AbsBook {
   cover: string | null // cover URL relative to ABS server
   hasSubtitles: boolean
   ebookPath: string | null // absolute path if same-machine ABS
+  ebookDownloadUrl?: string | null // authenticated portable download URL when ABS exposes a file id
   audioFiles: AbsAudioFile[]
 }
 
@@ -168,6 +180,7 @@ export interface AbsBookSummary {
   cover: string | null
   hasSubtitles: boolean
   ebookPath: string | null
+  ebookDownloadUrl?: string | null
   audioFiles: AbsAudioFile[]
 }
 
@@ -177,17 +190,54 @@ export interface AppSettings {
   absUrl: string
   absUsername?: string
   defaultModel: WhisperModel
+  computePreference?: ComputePreference
+}
+
+export interface RuntimeCapabilities {
+  runtime: 'windows-desktop' | 'docker-web'
+  nativeFilePicker: boolean
+  browserUploads: boolean
+  nativeOutputFolder: boolean
+  resultDownloads: boolean
+  singleUser: true
+}
+
+export type ComputePreference = 'automatic' | 'cpu'
+export type ComputeBackend = 'cuda' | 'cpu' | 'unknown'
+
+export interface ComputeStatus {
+  preference: ComputePreference
+  detectedBackend: ComputeBackend
+  activeBackend: ComputeBackend
+  fallbackReason: string | null
+}
+
+export interface ManagedStorageSummary {
+  totalBytes: number
+  artifactCount: number
+  byCategory: Record<string, { bytes: number; count: number }>
+}
+
+export interface ManagedCleanupPreview {
+  token: string
+  revision: number
+  artifactCount: number
+  sizeBytes: number
 }
 
 export interface AbsLoginResult {
   username: string
   userType: string
   serverVersion: string
+  connectionWarning?: string
 }
 
 // ─── IPC channels ────────────────────────────────────────────────────────────
 
 export const IPC = {
+  // Runtime
+  RUNTIME_CAPABILITIES: 'runtime:capabilities',
+
   // Whisper
   WHISPER_PROGRESS: 'whisper:progress',
   WHISPER_CANCEL: 'whisper:cancel',
@@ -216,6 +266,11 @@ export const IPC = {
   // Diagnostics
   DIAGNOSTICS_EXPORT: 'diagnostics:export',
 
+  // Managed storage
+  STORAGE_SUMMARY: 'storage:summary',
+  STORAGE_CLEANUP_PREVIEW: 'storage:cleanup-preview',
+  STORAGE_CLEANUP_EXECUTE: 'storage:cleanup-execute',
+
   // ABS
   ABS_LOGIN: 'abs:login',
   ABS_LOGOUT: 'abs:logout',
@@ -226,5 +281,6 @@ export const IPC = {
   // Settings
   SETTINGS_GET: 'settings:get',
   SETTINGS_SET_URL: 'settings:set-url',
-  SETTINGS_SET_DEFAULT_MODEL: 'settings:set-default-model'
+  SETTINGS_SET_DEFAULT_MODEL: 'settings:set-default-model',
+  SETTINGS_SET_COMPUTE_PREFERENCE: 'settings:set-compute-preference'
 } as const

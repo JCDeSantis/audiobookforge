@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, createWrite
 import { join, basename, extname, isAbsolute } from 'path'
 import axios from 'axios'
 import { v4 as uuidv4 } from 'uuid'
-import Epub from 'epub2'
+import { extractEpubVocabulary } from '../../core/context/epubVocabulary'
 import {
   cancelTranscription,
   clearTranscriptionCheckpoint,
@@ -32,6 +32,13 @@ import type {
   WhisperModel,
   WhisperProgressEvent
 } from '../../shared/types'
+import {
+  PersistenceError,
+  readVersionedJson,
+  writeVersionedJson
+} from '../../core/persistence/atomicJsonStore'
+import { getDesktopDataPaths } from '../platform/desktopDataPaths'
+import { trackDesktopManagedArtifact } from '../platform/desktopArtifacts'
 
 type QueueAddPayload = Omit<
   TranscriptionJob,
@@ -57,6 +64,8 @@ const VALID_JOB_STATUSES = new Set<TranscriptionJob['status']>([
   'failed',
   'cancelled'
 ])
+const QUEUE_SCHEMA_VERSION = 1
+const MANAGED_RESULT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 
 let jobs: TranscriptionJob[] = []
 let activeJobId: string | null = null
@@ -67,7 +76,7 @@ let win: BrowserWindow | null = null
 let queueIpcRegistered = false
 
 function getQueuePath(): string {
-  return join(app.getPath('userData'), 'queue.json')
+  return getDesktopDataPaths().queueFile
 }
 
 function isNonEmptyString(value: unknown): value is string {
@@ -221,25 +230,37 @@ function hydrateQueueJob(rawJob: Partial<TranscriptionJob>): TranscriptionJob | 
 }
 
 export function loadQueue(): TranscriptionJob[] {
-  try {
-    const raw = readFileSync(getQueuePath(), 'utf-8')
-    const parsed = JSON.parse(raw) as Array<Partial<TranscriptionJob>>
-
-    if (!Array.isArray(parsed)) {
-      return []
-    }
-
-    return parsed
-      .map((job) => hydrateQueueJob(job))
-      .filter((job): job is TranscriptionJob => job !== null)
-  } catch {
+  const queuePath = getQueuePath()
+  if (!existsSync(queuePath)) {
     return []
   }
+
+  const persisted = readVersionedJson<unknown[]>({
+    filePath: queuePath,
+    schemaVersion: QUEUE_SCHEMA_VERSION,
+    validate: Array.isArray,
+    migrateLegacy: (legacy) => {
+      if (!Array.isArray(legacy)) {
+        throw new Error('Legacy queue data must be an array.')
+      }
+      return legacy
+    }
+  }).data
+
+  return persisted.map((rawJob, index) => {
+    if (!rawJob || typeof rawJob !== 'object') {
+      throw new PersistenceError(`Queue job ${index} is not an object.`, queuePath)
+    }
+    const hydrated = hydrateQueueJob(rawJob as Partial<TranscriptionJob>)
+    if (!hydrated) {
+      throw new PersistenceError(`Queue job ${index} failed validation.`, queuePath)
+    }
+    return hydrated
+  })
 }
 
 export function persistQueue(nextJobs: TranscriptionJob[]): void {
-  mkdirSync(app.getPath('userData'), { recursive: true })
-  writeFileSync(getQueuePath(), JSON.stringify(nextJobs, null, 2), 'utf-8')
+  writeVersionedJson(getQueuePath(), QUEUE_SCHEMA_VERSION, nextJobs)
 }
 
 export function setQueueWindow(browserWindow: BrowserWindow): void {
@@ -353,22 +374,7 @@ async function saveMultipartLocalSubtitles(
 }
 
 export async function extractEpubVocab(epubPath: string): Promise<string> {
-  try {
-    const epub = await Epub.createAsync(epubPath)
-    const chapters = await Promise.all(epub.flow.map((chapter) => epub.getChapterAsync(chapter.id)))
-    const allText = chapters.join(' ')
-    const text = allText.replace(/<[^>]+>/g, ' ')
-    const words = new Set<string>()
-
-    for (const match of text.matchAll(/\b([A-Z][a-zA-Z]{5,})\b/g)) {
-      words.add(match[1])
-      if (words.size >= 150) break
-    }
-
-    return Array.from(words).join(', ')
-  } catch {
-    return ''
-  }
+  return extractEpubVocabulary(epubPath)
 }
 
 async function resolveAbsAudioPaths(job: TranscriptionJob): Promise<{
@@ -608,6 +614,13 @@ async function runNext(): Promise<void> {
           getJobSubtitleBaseName(next),
           subtitleFormats
         )
+        for (const resultPath of next.srtPaths) {
+          trackDesktopManagedArtifact(
+            resultPath,
+            'result',
+            Date.now() + MANAGED_RESULT_RETENTION_MS
+          )
+        }
         next.srtPath = next.srtPaths.find((path) => extname(path).toLowerCase() === '.srt') ?? null
         next.qualityReport = createQualityReport(parseSrtContent(mergedSrt), qualityDuration, [
           {
@@ -679,16 +692,20 @@ export function registerQueueIpc(): void {
   queueIpcRegistered = true
 
   jobs = loadQueue()
+  let recoveredInterruptedJob = false
   for (const job of jobs) {
     if (job.status === 'running') {
       job.status = 'queued'
       job.startedAt = null
+      recoveredInterruptedJob = true
       if (job.source === 'abs') {
         cleanTempDir(job.id)
       }
     }
   }
-  persistQueue(jobs)
+  if (recoveredInterruptedJob) {
+    persistQueue(jobs)
+  }
 
   ipcMain.handle(IPC.QUEUE_ADD, async (_event, jobData: QueueAddPayload) => {
     const payload = sanitizeQueueAddPayload(jobData)

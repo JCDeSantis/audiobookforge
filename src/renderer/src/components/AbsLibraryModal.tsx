@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import type { AbsBook } from '../../../shared/types'
+import { getAppClient } from '../lib/appClient'
 import { useAppStore } from '../store/useAppStore'
 
 type BookSortOption = 'title' | 'author' | 'missing-srt' | 'has-srt'
@@ -125,7 +126,7 @@ export function AbsLibraryModal(): React.JSX.Element {
     setLoading(true)
     setError(null)
     try {
-      const libraries = await window.electron.abs.getLibraries()
+      const libraries = await getAppClient().abs.getLibraries()
       setAbsLibraries(libraries)
       setAbsConnected(true)
       if (libraries.length > 0 && !selectedLibraryId) {
@@ -150,7 +151,7 @@ export function AbsLibraryModal(): React.JSX.Element {
       setLoading(true)
       setError(null)
       try {
-        const books = await window.electron.abs.getBooks(libraryId)
+        const books = await getAppClient().abs.getBooks(libraryId)
         setAbsBooks(libraryId, books)
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : 'Failed to load books.')
@@ -165,11 +166,11 @@ export function AbsLibraryModal(): React.JSX.Element {
     setLoading(true)
     setError(null)
     try {
-      const libraries = await window.electron.abs.getLibraries()
+      const libraries = await getAppClient().abs.getLibraries()
       setAbsLibraries(libraries)
 
       if (selectedLibraryId) {
-        const books = await window.electron.abs.getBooks(selectedLibraryId)
+        const books = await getAppClient().abs.getBooks(selectedLibraryId)
         setAbsBooks(selectedLibraryId, books)
       }
     } catch (refreshError) {

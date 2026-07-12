@@ -28,4 +28,15 @@ describe('urlSafety', () => {
     })
     expect(isSafeExternalUrl('file:///C:/Windows/System32/cmd.exe')).toBe(false)
   })
+
+  it('rejects link-local metadata destinations even when HTTPS is used', () => {
+    expect(validateAbsUrl('http://169.254.169.254/latest/meta-data')).toEqual({
+      ok: false,
+      error: 'AudioBookShelf URLs cannot target link-local or metadata hosts.'
+    })
+    expect(validateAbsUrl('https://[fe80::1]')).toEqual({
+      ok: false,
+      error: 'AudioBookShelf URLs cannot target link-local or metadata hosts.'
+    })
+  })
 })

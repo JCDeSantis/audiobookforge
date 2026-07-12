@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import type { TranscriptionJob } from '../../../shared/types'
+import { getAppClient } from '../lib/appClient'
 import { getWhisperModelBaseName } from '../lib/whisperModels'
 import { WHISPER_MODELS } from '../lib/whisperModels'
 import { useAppStore } from '../store/useAppStore'
@@ -119,29 +120,37 @@ function JobCard({
         : 'Waiting in queue'
 
   const handleCancel = (): void => {
-    window.electron.queue.cancel(job.id)
+    getAppClient().queue.cancel(job.id)
   }
 
   const handlePause = (): void => {
-    window.electron.queue.pause(job.id)
+    getAppClient().queue.pause(job.id)
   }
 
   const handleResume = (): void => {
-    window.electron.queue.resume(job.id)
+    getAppClient().queue.resume(job.id)
   }
 
   const handleRetry = async (): Promise<void> => {
-    await window.electron.queue.retry(job.id, retryModel)
+    await getAppClient().queue.retry(job.id, retryModel)
   }
 
   const handleRemove = (): void => {
-    window.electron.queue.remove(job.id)
+    getAppClient().queue.remove(job.id)
   }
 
   const handleRevealSaved = (): void => {
     if (savedPaths.length > 0) {
-      window.electron.files.showInExplorer(savedPaths[0])
+      getAppClient().files.showInExplorer(savedPaths[0])
     }
+  }
+
+  const handleDownload = (artifactId: string): void => {
+    void getAppClient().files.downloadArtifact(artifactId)
+  }
+
+  const handleDownloadAll = (): void => {
+    void getAppClient().files.downloadJobResults(job.id)
   }
 
   return (
@@ -167,9 +176,9 @@ function JobCard({
       </div>
       <div
         className="mt-1 h-4 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] leading-4 text-[#bb9191]"
-        title={`${job.source === 'abs' ? 'AudioBookShelf' : 'Local files'} - ${modelName}`}
+        title={`${job.source === 'abs' ? 'AudioBookShelf' : job.source === 'upload' ? 'Browser upload' : 'Local files'} - ${modelName}`}
       >
-        {job.source === 'abs' ? 'AudioBookShelf' : 'Local files'} - {modelName}
+        {job.source === 'abs' ? 'AudioBookShelf' : job.source === 'upload' ? 'Browser upload' : 'Local files'} - {modelName}
       </div>
 
       {!quiet && (
@@ -250,8 +259,17 @@ function JobCard({
         </button>
       )}
 
-      {job.status === 'done' && savedPaths.length === 0 && job.source === 'abs' && (
+      {job.status === 'done' &&
+        savedPaths.length === 0 &&
+        job.source === 'abs' &&
+        !job.resultArtifactIds?.length && (
         <div className="mt-3 text-xs text-[#97d8ad]">Uploaded to AudioBookShelf</div>
+      )}
+
+      {job.status === 'done' && job.source === 'abs' && job.deliveryWarning && (
+        <div className="mt-2 truncate text-xs text-[#f6c76a]" title={job.deliveryWarning}>
+          ABS upload fallback — download results below
+        </div>
       )}
 
       <div className={`${quiet ? 'mt-3' : 'mt-2'} flex h-8 items-center gap-2 text-xs`}>
@@ -262,6 +280,29 @@ function JobCard({
         )}
 
         <div className="ml-auto flex min-w-0 flex-nowrap justify-end gap-1.5">
+          {job.status === 'done' &&
+            (job.source === 'upload' || job.source === 'abs') &&
+            job.resultArtifactIds &&
+            job.resultArtifactIds.length > 1 && (
+              <button
+                className="rounded-md border border-[#28543a] px-2.5 py-1.5 text-[#a9e3bd] transition-colors hover:border-[#4b9a69] hover:text-[#effff4]"
+                onClick={handleDownloadAll}
+              >
+                Download All
+              </button>
+            )}
+          {job.status === 'done' &&
+            (job.source === 'upload' || job.source === 'abs') &&
+            job.resultArtifactIds?.length === 1 &&
+            job.resultArtifactIds.map((artifactId) => (
+              <button
+                key={artifactId}
+                className="rounded-md border border-[#28543a] px-2.5 py-1.5 text-[#a9e3bd] transition-colors hover:border-[#4b9a69] hover:text-[#effff4]"
+                onClick={() => handleDownload(artifactId)}
+              >
+                Download
+              </button>
+            ))}
           {isActive && (
             <button
               className="h-8 rounded-md border border-[#5b1f1f] px-2.5 text-[#f0c7c7] transition-colors hover:border-[#dc2626] hover:text-[#fff3f3]"
@@ -353,7 +394,7 @@ export function QueuePanel(): React.JSX.Element {
   }, [activeJobs.length])
 
   const handleClearDone = (): void => {
-    window.electron.queue.clearDone()
+    getAppClient().queue.clearDone()
   }
 
   const moveJob = (jobId: string, direction: -1 | 1): void => {
@@ -366,7 +407,7 @@ export function QueuePanel(): React.JSX.Element {
 
     const [moved] = ordered.splice(index, 1)
     ordered.splice(nextIndex, 0, moved)
-    window.electron.queue.reorder(ordered)
+    getAppClient().queue.reorder(ordered)
   }
 
   return (

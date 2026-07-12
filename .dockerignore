@@ -1,0 +1,13 @@
+.git
+.github
+.agents
+.superpowers
+.worktrees
+.vscode
+dist
+node_modules
+out
+*.log*
+secrets
+Dockerfile*
+docs/readme-assets
