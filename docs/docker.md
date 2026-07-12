@@ -57,6 +57,8 @@ docker compose -f compose.yml -f compose.gpu.yml exec audiobookforge nvidia-smi
 
 The application reports the selected backend and any CPU fallback in job details and diagnostics. Choose **Force CPU** in Settings when GPU use is not desired. CPU-only startup never requires NVIDIA Container Toolkit.
 
+Automatic mode performs a short CUDA Whisper preflight on the first job after the model is ready. This validates the bundled CUDA executable and libraries—not just `nvidia-smi`—before selecting CUDA; a failed preflight records the classified reason and starts the job on CPU.
+
 ## Upload and result workflow
 
 - Use **Upload Files** for one or more `.m4b`/`.mp3` files and one optional `.epub`.
