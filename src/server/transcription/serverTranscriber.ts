@@ -147,13 +147,21 @@ export class ServerTranscriber {
         segmentCount,
         this.config.checkpointRetentionMs
       )
-      let backend: ComputeBackend =
-        this.getComputePreference() === 'cpu'
-          ? 'cpu'
-          : (await this.cudaAvailable(signal))
-            ? 'cuda'
-            : 'cpu'
       let fallbackReason: string | null = null
+      let backend: ComputeBackend = 'cpu'
+      if (this.getComputePreference() !== 'cpu') {
+        const cuda = await this.cudaAvailable(wavPath, modelPath, jobTemp, signal)
+        if (cuda.available) {
+          backend = 'cuda'
+        } else if (cuda.reason) {
+          fallbackReason = cuda.reason
+          onProgress({
+            phase: 'transcribing',
+            percent: 0,
+            liveText: `CUDA ${cuda.reason}; using CPU`
+          })
+        }
+      }
       const completedSrts: string[] = []
       for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
         if (checkpoints.has(segmentIndex)) {
@@ -287,10 +295,71 @@ export class ServerTranscriber {
     }
   }
 
-  private async cudaAvailable(signal: AbortSignal): Promise<boolean> {
-    if (!existsSync(this.config.whisperCudaPath)) return false
-    const result = await this.run('nvidia-smi', ['-L'], signal).catch(() => null)
-    return result?.code === 0
+  private async cudaAvailable(
+    wavPath: string,
+    modelPath: string,
+    jobTemp: string,
+    signal: AbortSignal
+  ): Promise<{ available: boolean; reason: string | null }> {
+    if (!existsSync(this.config.whisperCudaPath)) return { available: false, reason: null }
+    const device = await this.run('nvidia-smi', ['-L'], signal).catch(() => null)
+    if (!device || device.code !== 0) return { available: false, reason: null }
+
+    // nvidia-smi only proves that the driver is visible. Run the actual bundled
+    // CUDA Whisper executable against a tiny decoded sample before selecting it
+    // for a real job. This catches missing CUDA libraries and incompatible
+    // binaries before any checkpoint is committed.
+    const selfTestWav = join(jobTemp, 'cuda-self-test.wav')
+    const selfTestBase = join(jobTemp, 'cuda-self-test')
+    try {
+      const extracted = await this.run(
+        this.config.ffmpegPath,
+        [
+          '-hide_banner',
+          '-y',
+          '-t',
+          '1',
+          '-i',
+          wavPath,
+          '-ar',
+          '16000',
+          '-ac',
+          '1',
+          '-c:a',
+          'pcm_s16le',
+          selfTestWav
+        ],
+        signal
+      )
+      if (extracted.code !== 0 || !existsSync(selfTestWav)) {
+        return { available: false, reason: 'initialization-failed' }
+      }
+      const whisper = await this.runWhisper(
+        this.config.whisperCudaPath,
+        modelPath,
+        selfTestWav,
+        selfTestBase,
+        'cuda',
+        () => undefined,
+        signal
+      )
+      if (whisper.code === 0 && existsSync(`${selfTestBase}.srt`)) {
+        return { available: true, reason: null }
+      }
+      return {
+        available: false,
+        reason: classifyCudaFailure(whisper.code, whisper.stderr) ?? 'initialization-failed'
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return {
+        available: false,
+        reason: classifyCudaFailure(null, message) ?? 'initialization-failed'
+      }
+    } finally {
+      rmSync(selfTestWav, { force: true })
+      rmSync(`${selfTestBase}.srt`, { force: true })
+    }
   }
 
   private async probeDuration(wavPath: string, signal: AbortSignal): Promise<number> {
