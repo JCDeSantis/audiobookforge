@@ -132,19 +132,25 @@ Persistence writes are versioned, atomic, and backed up. If migration or recover
 
 ## Environment variables
 
-| Variable                  | Default                           | Purpose                                                                      |
-| ------------------------- | --------------------------------- | ---------------------------------------------------------------------------- |
-| `ABF_WEB_PASSWORD_FILE`   | none                              | Required password-file path; Compose mounts `/run/secrets/abf_web_password`. |
-| `ABF_WEB_PASSWORD`        | none                              | Less-preferred direct environment fallback.                                  |
-| `ABF_HOST`                | `0.0.0.0`                         | HTTP listen address.                                                         |
-| `ABF_PORT`                | `3000`                            | Internal HTTP port.                                                          |
-| `ABF_DATA_DIR`            | `/data`                           | Persistent application storage root.                                         |
-| `ABF_TRUST_PROXY`         | `false`                           | Trust proxy forwarding information when behind a controlled proxy.           |
-| `ABF_SESSION_SECRET_FILE` | `/data/config/session-secret.key` | Persistent signing and ABS-session encryption secret.                        |
-| `ABF_WEB_ROOT`            | `/app/out/renderer`               | Compiled web application directory.                                          |
-| `ABF_FFMPEG_PATH`         | `/usr/bin/ffmpeg`                 | FFmpeg executable override.                                                  |
-| `ABF_FFPROBE_PATH`        | `/usr/bin/ffprobe`                | FFprobe executable override.                                                 |
-| `ABF_WHISPER_CPU_PATH`    | image CPU binary                  | CPU Whisper executable override.                                             |
-| `ABF_WHISPER_CUDA_PATH`   | image CUDA binary                 | CUDA Whisper executable override.                                            |
+| Variable                        | Default                           | Purpose                                                                      |
+| ------------------------------- | --------------------------------- | ---------------------------------------------------------------------------- |
+| `ABF_WEB_PASSWORD_FILE`         | none                              | Required password-file path; Compose mounts `/run/secrets/abf_web_password`. |
+| `ABF_WEB_PASSWORD`              | none                              | Less-preferred direct environment fallback.                                  |
+| `ABF_HOST`                      | `0.0.0.0`                         | HTTP listen address.                                                         |
+| `ABF_PORT`                      | `3000`                            | Internal HTTP port.                                                          |
+| `ABF_DATA_DIR`                  | `/data`                           | Persistent application storage root.                                         |
+| `ABF_TRUST_PROXY`               | `false`                           | Trust proxy forwarding information when behind a controlled proxy.           |
+| `ABF_SESSION_SECRET_FILE`       | `/data/config/session-secret.key` | Persistent signing and ABS-session encryption secret.                        |
+| `ABF_WEB_ROOT`                  | `/app/out/renderer`               | Compiled web application directory.                                          |
+| `ABF_FFMPEG_PATH`               | `/usr/bin/ffmpeg`                 | FFmpeg executable override.                                                  |
+| `ABF_FFPROBE_PATH`              | `/usr/bin/ffprobe`                | FFprobe executable override.                                                 |
+| `ABF_WHISPER_CPU_PATH`          | image CPU binary                  | CPU Whisper executable override.                                             |
+| `ABF_WHISPER_CUDA_PATH`         | image CUDA binary                 | CUDA Whisper executable override.                                            |
+| `ABF_MAX_UPLOAD_BYTES`          | `107374182400`                    | Maximum aggregate upload-session bytes.                                      |
+| `ABF_FREE_SPACE_RESERVE_BYTES`  | `5368709120`                      | Free-space reserve required while accepting uploads.                         |
+| `ABF_UPLOAD_RETENTION_DAYS`     | `7`                               | Days before finalized uploaded sources become eligible for cleanup.          |
+| `ABF_RESULT_RETENTION_DAYS`     | `30`                              | Days before generated results become eligible for cleanup.                   |
+| `ABF_CHECKPOINT_RETENTION_DAYS` | `30`                              | Days before completed checkpoints become eligible for cleanup.               |
+| `ABF_RETENTION_SWEEP_HOURS`     | `6`                               | Interval between retention sweeps.                                           |
 
 Internal binary/path overrides are primarily for diagnostics and development; normal Compose deployments should leave them unchanged.

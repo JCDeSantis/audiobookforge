@@ -30,10 +30,18 @@ describe('authenticated web runtime', () => {
       ffmpegPath: 'ffmpeg',
       ffprobePath: 'ffprobe',
       whisperCpuPath: 'whisper-cpu',
-      whisperCudaPath: 'whisper-cuda'
+      whisperCudaPath: 'whisper-cuda',
+      maxUploadBytes: 100 * 1024 * 1024 * 1024,
+      freeSpaceReserveBytes: 5 * 1024 * 1024 * 1024,
+      uploadRetentionMs: 7 * 24 * 60 * 60 * 1000,
+      resultRetentionMs: 30 * 24 * 60 * 60 * 1000,
+      checkpointRetentionMs: 30 * 24 * 60 * 60 * 1000,
+      retentionSweepIntervalMs: 6 * 60 * 60 * 1000
     }
     runtime = createWebServer(config)
-    await new Promise<void>((resolveListen) => runtime!.server.listen(0, '127.0.0.1', resolveListen))
+    await new Promise<void>((resolveListen) =>
+      runtime!.server.listen(0, '127.0.0.1', resolveListen)
+    )
     const address = runtime.server.address() as AddressInfo
     baseUrl = `http://127.0.0.1:${address.port}`
   })
@@ -141,19 +149,16 @@ describe('authenticated web runtime', () => {
     const session = (await created.json()) as { id: string; files: Array<{ id: string }> }
     const fileId = session.files[0].id
 
-    const uploaded = await fetch(
-      `${baseUrl}/api/v1/uploads/${session.id}/files/${fileId}`,
-      {
-        method: 'PUT',
-        headers: {
-          ...headers,
-          'Content-Type': 'application/octet-stream',
-          'Upload-Offset': '0',
-          'X-Chunk-SHA256': checksum
-        },
-        body: content
-      }
-    )
+    const uploaded = await fetch(`${baseUrl}/api/v1/uploads/${session.id}/files/${fileId}`, {
+      method: 'PUT',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/octet-stream',
+        'Upload-Offset': '0',
+        'X-Chunk-SHA256': checksum
+      },
+      body: content
+    })
     expect(uploaded.status).toBe(204)
     expect(uploaded.headers.get('upload-offset')).toBe(String(content.length))
 

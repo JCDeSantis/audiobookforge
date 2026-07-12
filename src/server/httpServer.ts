@@ -150,7 +150,11 @@ function contentType(path: string): string {
   }
 }
 
-function serveStatic(pathname: string, config: ServerRuntimeConfig, response: ServerResponse): void {
+function serveStatic(
+  pathname: string,
+  config: ServerRuntimeConfig,
+  response: ServerResponse
+): void {
   const requested = pathname === '/' ? 'index.html' : normalize(pathname).replace(/^[/\\]+/, '')
   let filePath = resolve(config.webRoot, requested)
   if (relative(config.webRoot, filePath).startsWith('..')) {
@@ -208,16 +212,35 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
   const sessions = new SessionManager(sessionSecret)
   const instanceLock = new ServerInstanceLock(config.dataPaths)
   instanceLock.acquire()
-  const { limiter, events, artifacts, retention, uploads, settings, absClient, absSessions, queue, models, worker } = (() => {
+  const {
+    limiter,
+    events,
+    artifacts,
+    retention,
+    uploads,
+    settings,
+    absClient,
+    absSessions,
+    queue,
+    models,
+    worker
+  } = (() => {
     try {
       scavengeInterruptedProcessing(config.dataPaths)
       const limiter = new LoginRateLimiter()
       const events = new EventBroker()
       const artifacts = new ArtifactStore(config.dataPaths)
       artifacts.load()
-      const retention = new RetentionService(artifacts)
+      const retention = new RetentionService(artifacts, Date.now, config.retentionSweepIntervalMs)
       retention.start()
-      const uploads = new UploadStore(config.dataPaths, artifacts)
+      const uploads = new UploadStore(
+        config.dataPaths,
+        artifacts,
+        Date.now,
+        config.maxUploadBytes,
+        config.freeSpaceReserveBytes,
+        config.uploadRetentionMs
+      )
       uploads.load()
       const settings = new AppSettingsStore(config.dataPaths.settingsFile)
       const absClient = new ServerAbsClient()
@@ -237,7 +260,19 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
       )
       const worker = new ServerQueueWorker(queue, uploads, transcriber, absJobs)
       worker.start()
-      return { limiter, events, artifacts, retention, uploads, settings, absClient, absSessions, queue, models, worker }
+      return {
+        limiter,
+        events,
+        artifacts,
+        retention,
+        uploads,
+        settings,
+        absClient,
+        absSessions,
+        queue,
+        models,
+        worker
+      }
     } catch (error) {
       instanceLock.release()
       throw error
@@ -340,11 +375,7 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
         if (body.preference !== 'automatic' && body.preference !== 'cpu') {
           throw new Error('Unsupported compute preference.')
         }
-        sendJson(
-          response,
-          200,
-          settings.setComputePreference(body.preference as ComputePreference)
-        )
+        sendJson(response, 200, settings.setComputePreference(body.preference as ComputePreference))
         return
       }
 
@@ -499,7 +530,10 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
         )
         response.statusCode = 200
         response.setHeader('Content-Type', 'application/json; charset=utf-8')
-        response.setHeader('Content-Disposition', 'attachment; filename="audiobookforge-diagnostics.json"')
+        response.setHeader(
+          'Content-Disposition',
+          'attachment; filename="audiobookforge-diagnostics.json"'
+        )
         response.setHeader('Content-Length', Buffer.byteLength(body))
         response.end(body)
         return
@@ -660,9 +694,7 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
         return
       }
 
-      const finalizeSessionMatch = pathname.match(
-        /^\/api\/v1\/uploads\/([a-f0-9-]+)\/finalize$/i
-      )
+      const finalizeSessionMatch = pathname.match(/^\/api\/v1\/uploads\/([a-f0-9-]+)\/finalize$/i)
       if (method === 'POST' && finalizeSessionMatch) {
         requireSameOrigin(request, config)
         requireCsrf(request, context!.session)
@@ -672,9 +704,7 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
         return
       }
 
-      const resultDownloadMatch = pathname.match(
-        /^\/api\/v1\/artifacts\/([a-f0-9-]+)\/download$/i
-      )
+      const resultDownloadMatch = pathname.match(/^\/api\/v1\/artifacts\/([a-f0-9-]+)\/download$/i)
       if ((method === 'GET' || method === 'HEAD') && resultDownloadMatch) {
         const artifact = artifacts.get(resultDownloadMatch[1])
         if (
@@ -706,7 +736,12 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
             start = Number(match[1])
             end = match[2] ? Number(match[2]) : size - 1
           }
-          if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start > end || end >= size) {
+          if (
+            !Number.isSafeInteger(start) ||
+            !Number.isSafeInteger(end) ||
+            start > end ||
+            end >= size
+          ) {
             response.statusCode = 416
             response.setHeader('Content-Range', `bytes */${size}`)
             response.end()

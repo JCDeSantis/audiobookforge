@@ -39,4 +39,23 @@ describe('server runtime boundary', () => {
     ])
     expect(getServerRuntimeWarnings(secretFile)).toEqual([])
   })
+
+  it('parses upload and retention limits from environment settings', () => {
+    const config = loadServerRuntimeConfig({
+      ABF_WEB_PASSWORD: 'secret',
+      ABF_MAX_UPLOAD_BYTES: '1234',
+      ABF_FREE_SPACE_RESERVE_BYTES: '5678',
+      ABF_UPLOAD_RETENTION_DAYS: '2',
+      ABF_RESULT_RETENTION_DAYS: '3',
+      ABF_CHECKPOINT_RETENTION_DAYS: '4',
+      ABF_RETENTION_SWEEP_HOURS: '5'
+    })
+
+    expect(config.maxUploadBytes).toBe(1234)
+    expect(config.freeSpaceReserveBytes).toBe(5678)
+    expect(config.uploadRetentionMs).toBe(2 * 24 * 60 * 60 * 1000)
+    expect(config.resultRetentionMs).toBe(3 * 24 * 60 * 60 * 1000)
+    expect(config.checkpointRetentionMs).toBe(4 * 24 * 60 * 60 * 1000)
+    expect(config.retentionSweepIntervalMs).toBe(5 * 60 * 60 * 1000)
+  })
 })

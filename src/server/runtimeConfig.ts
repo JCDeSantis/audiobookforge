@@ -1,5 +1,6 @@
 import { resolve } from 'path'
 import { createDataPaths, type DataPaths } from '../core/platform/dataPaths'
+import { DEFAULT_FREE_SPACE_RESERVE_BYTES, DEFAULT_MAX_UPLOAD_BYTES } from './uploads/uploadStore'
 
 export interface ServerRuntimeConfig {
   host: string
@@ -14,6 +15,12 @@ export interface ServerRuntimeConfig {
   ffprobePath: string
   whisperCpuPath: string
   whisperCudaPath: string
+  maxUploadBytes: number
+  freeSpaceReserveBytes: number
+  uploadRetentionMs: number
+  resultRetentionMs: number
+  checkpointRetentionMs: number
+  retentionSweepIntervalMs: number
 }
 
 export function getServerRuntimeWarnings(config: ServerRuntimeConfig): string[] {
@@ -40,6 +47,17 @@ function parseBoolean(value: string | undefined): boolean {
   if (value === 'true') return true
   if (value === 'false') return false
   throw new Error('ABF_TRUST_PROXY must be true or false.')
+}
+
+function parsePositiveNumber(value: string | undefined, fallback: number, name: string): number {
+  if (value === undefined || value.trim() === '') return fallback
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${name} must be a positive number.`)
+  return parsed
+}
+
+function parseRetentionDays(value: string | undefined, fallbackDays: number, name: string): number {
+  return parsePositiveNumber(value, fallbackDays, name) * 24 * 60 * 60 * 1000
 }
 
 export function loadServerRuntimeConfig(
@@ -70,6 +88,36 @@ export function loadServerRuntimeConfig(
     whisperCpuPath:
       environment.ABF_WHISPER_CPU_PATH?.trim() || '/opt/audiobookforge/whisper/cpu/whisper-cli',
     whisperCudaPath:
-      environment.ABF_WHISPER_CUDA_PATH?.trim() || '/opt/audiobookforge/whisper/cuda/whisper-cli'
+      environment.ABF_WHISPER_CUDA_PATH?.trim() || '/opt/audiobookforge/whisper/cuda/whisper-cli',
+    maxUploadBytes: parsePositiveNumber(
+      environment.ABF_MAX_UPLOAD_BYTES,
+      DEFAULT_MAX_UPLOAD_BYTES,
+      'ABF_MAX_UPLOAD_BYTES'
+    ),
+    freeSpaceReserveBytes: parsePositiveNumber(
+      environment.ABF_FREE_SPACE_RESERVE_BYTES,
+      DEFAULT_FREE_SPACE_RESERVE_BYTES,
+      'ABF_FREE_SPACE_RESERVE_BYTES'
+    ),
+    uploadRetentionMs: parseRetentionDays(
+      environment.ABF_UPLOAD_RETENTION_DAYS,
+      7,
+      'ABF_UPLOAD_RETENTION_DAYS'
+    ),
+    resultRetentionMs: parseRetentionDays(
+      environment.ABF_RESULT_RETENTION_DAYS,
+      30,
+      'ABF_RESULT_RETENTION_DAYS'
+    ),
+    checkpointRetentionMs: parseRetentionDays(
+      environment.ABF_CHECKPOINT_RETENTION_DAYS,
+      30,
+      'ABF_CHECKPOINT_RETENTION_DAYS'
+    ),
+    retentionSweepIntervalMs:
+      parsePositiveNumber(environment.ABF_RETENTION_SWEEP_HOURS, 6, 'ABF_RETENTION_SWEEP_HOURS') *
+      60 *
+      60 *
+      1000
   }
 }

@@ -42,6 +42,8 @@ export interface ServerTranscriberConfig {
   ffprobePath: string
   whisperCpuPath: string
   whisperCudaPath: string
+  resultRetentionMs?: number
+  checkpointRetentionMs?: number
 }
 
 function safeBaseName(value: string): string {
@@ -138,7 +140,13 @@ export class ServerTranscriber {
       const promptText = epubPath ? await extractEpubVocabulary(epubPath) : ''
       const duration = await this.probeDuration(wavPath, signal)
       const segmentCount = Math.max(1, Math.ceil(duration / SEGMENT_SECONDS))
-      const checkpoints = new ServerCheckpointStore(this.paths, this.artifacts, jobId, segmentCount)
+      const checkpoints = new ServerCheckpointStore(
+        this.paths,
+        this.artifacts,
+        jobId,
+        segmentCount,
+        this.config.checkpointRetentionMs
+      )
       let backend: ComputeBackend =
         this.getComputePreference() === 'cpu'
           ? 'cpu'
@@ -264,7 +272,7 @@ export class ServerTranscriber {
           this.artifacts.register({
             category: 'result',
             path: resultPath,
-            expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+            expiresAt: Date.now() + (this.config.resultRetentionMs ?? 30 * 24 * 60 * 60 * 1000),
             references: [`job:${jobId}`]
           })
         if (existing) this.artifacts.addReference(existing.id, `job:${jobId}`)

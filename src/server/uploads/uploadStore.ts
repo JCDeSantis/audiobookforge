@@ -28,7 +28,6 @@ export const UPLOAD_CHUNK_BYTES = 16 * 1024 * 1024
 export const DEFAULT_MAX_UPLOAD_BYTES = 100 * 1024 * 1024 * 1024
 export const DEFAULT_FREE_SPACE_RESERVE_BYTES = 5 * 1024 * 1024 * 1024
 const ABANDONED_UPLOAD_MS = 24 * 60 * 60 * 1000
-const FINALIZED_SOURCE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000
 
 function isSha256(value: string): boolean {
   return /^[a-f0-9]{64}$/i.test(value)
@@ -62,7 +61,8 @@ export class UploadStore {
     private readonly artifacts: ArtifactStore,
     private readonly now: () => number = Date.now,
     private readonly maxUploadBytes = DEFAULT_MAX_UPLOAD_BYTES,
-    private readonly freeSpaceReserveBytes = DEFAULT_FREE_SPACE_RESERVE_BYTES
+    private readonly freeSpaceReserveBytes = DEFAULT_FREE_SPACE_RESERVE_BYTES,
+    private readonly finalizedSourceRetentionMs = 7 * 24 * 60 * 60 * 1000
   ) {}
 
   load(): void {
@@ -229,7 +229,7 @@ export class UploadStore {
       category: 'upload-source',
       path: finalPath,
       sizeBytes: file.sizeBytes,
-      expiresAt: this.now() + FINALIZED_SOURCE_RETENTION_MS,
+      expiresAt: this.now() + this.finalizedSourceRetentionMs,
       references: [`upload-session:${session.id}`]
     })
     file.artifactId = artifact.id
@@ -246,7 +246,7 @@ export class UploadStore {
     }
     session.state = 'finalized'
     session.updatedAt = this.now()
-    session.expiresAt = session.updatedAt + FINALIZED_SOURCE_RETENTION_MS
+    session.expiresAt = session.updatedAt + this.finalizedSourceRetentionMs
     this.persist()
     return copySession(session)
   }

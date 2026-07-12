@@ -29,7 +29,8 @@ export class ServerCheckpointStore {
     paths: DataPaths,
     private readonly artifacts: ArtifactStore,
     private readonly jobId: string,
-    segmentCount: number
+    segmentCount: number,
+    private readonly retentionMs = 30 * 24 * 60 * 60 * 1000
   ) {
     this.dir = join(paths.checkpointsDir, jobId)
     this.statePath = join(this.dir, 'state.json')
@@ -56,7 +57,7 @@ export class ServerCheckpointStore {
       artifacts.register({
         category: 'checkpoint',
         path: this.dir,
-        expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+        expiresAt: Date.now() + this.retentionMs,
         references: [`job:${jobId}`]
       })
   }
