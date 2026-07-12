@@ -242,6 +242,7 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
         config.uploadRetentionMs
       )
       uploads.load()
+      uploads.startExpirySweep(config.retentionSweepIntervalMs)
       const settings = new AppSettingsStore(config.dataPaths.settingsFile)
       const absClient = new ServerAbsClient()
       const absSessions = new ServerAbsSessionStore(config.dataPaths, sessionSecret)
@@ -867,6 +868,7 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
     close: () => {
       worker.stop()
       retention.stop()
+      uploads.stopExpirySweep()
       return new Promise<void>((resolveClose, reject) => {
         server.close((error) => {
           instanceLock.release()

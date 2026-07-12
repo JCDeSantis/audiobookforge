@@ -6,13 +6,14 @@ import {
   mkdirSync,
   openSync,
   renameSync,
+  rmSync,
   statfsSync,
   writeFileSync,
   writeSync
 } from 'fs'
-import { basename, extname, join } from 'path'
+import { basename, extname, join, resolve } from 'path'
 import { createHash, randomUUID } from 'crypto'
-import { ArtifactStore } from '../../core/artifacts/artifactStore'
+import { ArtifactStore, isPathInsideRoot } from '../../core/artifacts/artifactStore'
 import type { DataPaths } from '../../core/platform/dataPaths'
 import { readVersionedJson, writeVersionedJson } from '../../core/persistence/atomicJsonStore'
 import type {
@@ -55,6 +56,7 @@ function copySession(session: UploadSession): UploadSession {
 
 export class UploadStore {
   private data: UploadRegistryData = { sessions: [] }
+  private expiryInterval: ReturnType<typeof setInterval> | null = null
 
   constructor(
     private readonly paths: DataPaths,
@@ -76,6 +78,62 @@ export class UploadStore {
         throw new Error('No legacy upload session format exists.')
       }
     }).data
+  }
+
+  startExpirySweep(intervalMs: number): void {
+    this.sweepExpired()
+    if (!this.expiryInterval) {
+      this.expiryInterval = setInterval(() => this.sweepExpired(), intervalMs)
+      this.expiryInterval.unref?.()
+    }
+  }
+
+  stopExpirySweep(): void {
+    if (this.expiryInterval) clearInterval(this.expiryInterval)
+    this.expiryInterval = null
+  }
+
+  sweepExpired(at = this.now()): { abandoned: number; released: number } {
+    let changed = false
+    let abandoned = 0
+    let released = 0
+    const retained = [] as UploadSession[]
+    for (const session of this.data.sessions) {
+      if (session.expiresAt > at) {
+        retained.push(session)
+        continue
+      }
+      if (session.state === 'open') {
+        this.removeOpenSessionDirectory(session.id)
+        abandoned += 1
+        changed = true
+        continue
+      }
+      const hasActiveJob = session.files.some((file) => {
+        if (!file.artifactId) return false
+        const artifact = this.artifacts.get(file.artifactId)
+        return artifact?.references.some((reference) => reference.startsWith('job:')) ?? false
+      })
+      if (hasActiveJob) {
+        retained.push(session)
+        continue
+      }
+      for (const file of session.files) {
+        if (!file.artifactId) continue
+        try {
+          this.artifacts.removeReference(file.artifactId, `upload-session:${session.id}`)
+        } catch {
+          // The artifact may already have been removed by reconciliation.
+        }
+      }
+      released += 1
+      changed = true
+    }
+    if (changed) {
+      this.data.sessions = retained
+      this.persist()
+    }
+    return { abandoned, released }
   }
 
   create(files: CreateUploadFile[]): UploadSession {
@@ -261,6 +319,17 @@ export class UploadStore {
     const file = session.files.find((entry) => entry.id === fileId)
     if (!file) throw new Error('Upload file was not found.')
     return file
+  }
+
+  private removeOpenSessionDirectory(sessionId: string): void {
+    const sessionDir = resolve(this.paths.uploadsDir, sessionId)
+    if (
+      !isPathInsideRoot(this.paths.uploadsDir, sessionDir) ||
+      sessionDir === resolve(this.paths.uploadsDir)
+    ) {
+      return
+    }
+    rmSync(sessionDir, { recursive: true, force: true })
   }
 
   private persist(): void {
