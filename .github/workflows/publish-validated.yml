@@ -1,0 +1,152 @@
+name: Publish Validated Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing validated v<version> tag
+        required: true
+        type: string
+      validation_run:
+        description: Successful Coordinated Release run containing the tested artifacts
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+  actions: read
+
+concurrency:
+  group: coordinated-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      VALIDATION_RUN: ${{ inputs.validation_run }}
+    steps:
+      - name: Verify successful validation belongs to the immutable tag
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "${VALIDATION_RUN}" =~ ^[0-9]+$ ]]
+          gh api "repos/${GH_REPO}/actions/runs/${VALIDATION_RUN}" > source-run.json
+          workflow_id=$(gh api "repos/${GH_REPO}/actions/workflows/release.yml" --jq .id)
+          source_sha=$(gh api "repos/${GH_REPO}/commits/${RELEASE_TAG}" --jq .sha)
+          jq -e --arg sha "${source_sha}" --argjson workflow "${workflow_id}" \
+            '.conclusion == "success" and .head_sha == $sha and .workflow_id == $workflow' source-run.json
+          gh api "repos/${GH_REPO}/actions/runs/${VALIDATION_RUN}/jobs?per_page=100" > source-jobs.json
+          for job in metadata windows web-server docker-cpu-security; do
+            jq -e --arg job "${job}" '.jobs | any(.name == $job and .conclusion == "success")' source-jobs.json
+          done
+          nvidia=$(jq -r '.jobs[] | select(.name == "nvidia-smoke") | .conclusion' source-jobs.json)
+          [[ "${nvidia}" == success || "${nvidia}" == skipped ]]
+          if [[ "$(gh release view "${RELEASE_TAG}" --json isDraft --jq .isDraft 2>/dev/null || true)" == false ]]; then
+            echo 'Release is already public; refusing to replace its artifacts.' >&2
+            exit 1
+          fi
+          image="ghcr.io/${GH_REPO,,}"
+          gh run view "${VALIDATION_RUN}" --log > validated.log
+          mapfile -t references < <(grep -oE "${image}@sha256:[0-9a-f]{64}" validated.log | sort -u)
+          test "${#references[@]}" -eq 1
+          digest="${references[0]#*@}"
+          echo "sha=${source_sha}" >> "${GITHUB_OUTPUT}"
+          echo "version=${RELEASE_TAG#v}" >> "${GITHUB_OUTPUT}"
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+          echo "nvidia=${nvidia}" >> "${GITHUB_OUTPUT}"
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+      - name: Download validated Windows artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: windows-${{ steps.source.outputs.version }}
+          run-id: ${{ inputs.validation_run }}
+          github-token: ${{ github.token }}
+          path: release-assets
+      - name: Download validated security report
+        uses: actions/download-artifact@v7
+        with:
+          name: docker-security
+          run-id: ${{ inputs.validation_run }}
+          github-token: ${{ github.token }}
+          path: release-assets
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Verify image and protect existing version tags
+        env:
+          IMAGE: ${{ steps.source.outputs.image }}
+          DIGEST: ${{ steps.source.outputs.digest }}
+          VERSION: ${{ steps.source.outputs.version }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "${IMAGE}@${DIGEST}"
+          for tag in "${VERSION}" "sha-${SOURCE_SHA}"; do
+            if docker buildx imagetools inspect "${IMAGE}:${tag}" > existing.txt 2> registry-error.txt; then
+              test "$(awk '/^Digest:/ {print $2; exit}' existing.txt)" = "${DIGEST}"
+            elif ! grep -Eqi 'not found|manifest unknown' registry-error.txt; then
+              cat registry-error.txt >&2
+              exit 1
+            fi
+          done
+      - name: Stage existing files and release instructions
+        env:
+          VERSION: ${{ steps.source.outputs.version }}
+          IMAGE: ${{ steps.source.outputs.image }}
+          DIGEST: ${{ steps.source.outputs.digest }}
+          NVIDIA_RESULT: ${{ steps.source.outputs.nvidia }}
+        run: |
+          set -euo pipefail
+          test -s "release-assets/audiobookforge-${VERSION}-setup.exe"
+          test -s "release-assets/audiobookforge-${VERSION}-win-unpacked.zip"
+          test -s release-assets/THIRD_PARTY_LICENSES.json
+          test -s release-assets/docker-security.txt
+          node -e 'const p=require("./package.json"),l=require("./package-lock.json");if(p.version!==process.env.VERSION||l.version!==p.version||l.packages[""].version!==p.version)throw Error("Version mismatch")'
+          cp compose.yml compose.gpu.yml release-assets/
+          cp docs/docker.md release-assets/DOCKER.md
+          printf 'ABF_VERSION=%s\n' "${VERSION}" > release-assets/release.env
+          printf '%s@%s\n' "${IMAGE}" "${DIGEST}" > release-assets/docker-image.txt
+          (cd release-assets && sha256sum * > SHA256SUMS.txt)
+          cat > release-body.md <<EOF
+          ## Install
+          Windows: download the setup.exe installer, or extract win-unpacked.zip and run audiobook-forge.exe.
+          Docker (linux/amd64): download compose.yml, compose.gpu.yml, and release.env. Rename release.env to .env and follow DOCKER.md.
+          Image: ${IMAGE}:${VERSION}
+          Exact tested image: ${IMAGE}@${DIGEST}
+
+          ## Validation
+          Published unchanged from successful [validation run ${VALIDATION_RUN}](https://github.com/${GH_REPO}/actions/runs/${VALIDATION_RUN}). Windows, browser, CPU transcription, and high/critical security checks passed.
+          NVIDIA hardware qualification: ${NVIDIA_RESULT}. If skipped, CUDA is bundled but not hardware-qualified; CPU is the validated path.
+          Container SBOM/provenance is retained. SHA256SUMS.txt covers downloadable assets.
+
+          ## Changes
+          EOF
+          sed '/^---$/,$d' RELEASE_NOTES.md >> release-body.md
+          gh release view "${RELEASE_TAG}" >/dev/null 2>&1 || \
+            gh release create "${RELEASE_TAG}" --draft --verify-tag --title "Audiobook Forge ${RELEASE_TAG}" --notes-file release-body.md
+          gh release edit "${RELEASE_TAG}" --notes-file release-body.md
+          gh release upload "${RELEASE_TAG}" release-assets/* --clobber
+      - name: Promote tested image and publish release
+        env:
+          IMAGE: ${{ steps.source.outputs.image }}
+          DIGEST: ${{ steps.source.outputs.digest }}
+          VERSION: ${{ steps.source.outputs.version }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create --tag "${IMAGE}:${VERSION}" --tag "${IMAGE}:sha-${SOURCE_SHA}" "${IMAGE}@${DIGEST}"
+          gh release edit "${RELEASE_TAG}" --draft=false
+          docker buildx imagetools create --tag "${IMAGE}:latest" "${IMAGE}@${DIGEST}"
