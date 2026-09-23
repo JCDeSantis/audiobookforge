@@ -61,6 +61,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          pull: true
           load: true
           tags: audiobookforge:ci
           cache-from: type=gha,scope=universal-linux-amd64
@@ -84,6 +85,24 @@ jobs:
           exit 1
       - name: Confirm CPU-only startup did not require NVIDIA
         run: docker inspect --format='{{.State.Running}}' audiobookforge-ci | grep true
+      - name: Confirm runtime excludes package-manager tooling
+        run: docker run --rm --entrypoint sh audiobookforge:ci -c 'node --version && ! command -v npm && ! command -v corepack && test ! -d /usr/local/lib/node_modules'
+      - name: CPU transcription smoke test
+        run: bash scripts/smoke-docker.sh audiobookforge:ci cpu
+      - name: Scan high and critical vulnerabilities before tagging
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: audiobookforge:ci
+          severity: CRITICAL,HIGH
+          scanners: vuln
+          exit-code: '1'
+          format: table
+          output: docker-security.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: docker-security
+          path: docker-security.txt
       - name: Show container logs on failure
         if: failure()
         run: docker logs audiobookforge-ci

@@ -4,7 +4,7 @@
 
 Evolve Audiobook Forge into one product with Windows Electron and authenticated Docker web runtimes. Both runtimes share queue, transcription, Audiobookshelf, subtitle, persistence, artifact, and cleanup services. A single `linux/amd64` Docker image contains independent CPU and CUDA Whisper executables, selects CUDA automatically, and falls back safely to CPU.
 
-Development occurs on `codex/docker-web-platform`. Version 1.2.0 is prepared for the coordinated Windows/Docker release; create its immutable tag after candidate acceptance. Stable artifacts publish only after all required validation passes.
+The platform work was merged from `codex/docker-web-platform`. The tagged 1.2.0 candidate failed its security scan and was not published. Version 1.2.1 is being prepared on `codex/release-1.2.1-security`; create its immutable tag only after candidate validation, including the Docker security scan. Stable artifacts publish only after all required validation passes.
 
 ## Delivery order
 

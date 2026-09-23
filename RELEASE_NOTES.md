@@ -1,3 +1,16 @@
+# Audiobook Forge v1.2.1
+
+Version 1.2.1 replaces the unpublished 1.2.0 candidate after its Docker security scan found outdated system packages and unnecessary npm tooling in the runtime image.
+
+- Update inherited Ubuntu packages when building the runtime image, including GnuPG and OpenSSL.
+- Copy only the Node executable into the runtime; keep npm, Corepack, and build tooling in the build stage.
+- Run CPU transcription and the high/critical vulnerability scan on pull requests before creating a release tag, in addition to the release-time checks.
+- Retain all Windows, Docker, and Audiobookshelf series-card improvements described below.
+
+The existing `v1.2.0` tag is preserved. Publication of 1.2.1 requires a fresh successful scan; no vulnerability exceptions are added.
+
+---
+
 # Audiobook Forge v1.2.0
 
 Version 1.2 adds an authenticated Docker web runtime alongside Windows, clearer Audiobookshelf series information, and coordinated releases for both platforms.

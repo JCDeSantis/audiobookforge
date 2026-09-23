@@ -14,7 +14,7 @@ describe('App shell composer flow', () => {
     render(<App />)
 
     expect(screen.getByRole('heading', { name: 'Audiobook Forge' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Version 1.2')).toHaveTextContent('v1.2')
+    expect(screen.getByLabelText('Version 1.2.1')).toHaveTextContent('v1.2.1')
     expect(
       screen.getByText('Generate audiobook subtitles with Audiobookshelf integration')
     ).toBeInTheDocument()
