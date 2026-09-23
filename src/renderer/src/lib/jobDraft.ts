@@ -8,8 +8,10 @@ import type {
 import { getLocalSourceTitle } from './sourceTitle'
 
 export interface JobDraft {
-  source: 'local' | 'abs' | null
+  source: 'local' | 'abs' | 'upload' | null
   audioFiles: string[]
+  uploadSessionId?: string | null
+  uploadEpubFileName?: string | null
   absItem: AbsBookSummary | null
   absItems: AbsBookSummary[]
   epubPath: string | null
@@ -37,6 +39,27 @@ export function selectLocalFiles(draft: JobDraft, audioFiles: string[]): JobDraf
     ...draft,
     source: 'local',
     audioFiles,
+    uploadSessionId: null,
+    uploadEpubFileName: null,
+    absItem: null,
+    absItems: []
+  }
+}
+
+export function selectWebUpload(
+  draft: JobDraft,
+  uploadSessionId: string,
+  audioFileNames: string[],
+  epubFileName: string | null
+): JobDraft {
+  return {
+    ...draft,
+    source: 'upload',
+    audioFiles: audioFileNames,
+    uploadSessionId,
+    uploadEpubFileName: epubFileName,
+    epubPath: null,
+    outputFolder: null,
     absItem: null,
     absItems: []
   }
@@ -53,6 +76,8 @@ export function selectAbsItems(draft: JobDraft, absItems: AbsBookSummary[]): Job
     absItem: absItems[0] ?? null,
     absItems,
     audioFiles: [],
+    uploadSessionId: null,
+    uploadEpubFileName: null,
     outputFolder: null
   }
 }
@@ -78,6 +103,10 @@ export function canContinue(draft: JobDraft): boolean {
     return getSelectedAbsItems(draft).length > 0
   }
 
+  if (draft.source === 'upload') {
+    return draft.audioFiles.length > 0 && Boolean(draft.uploadSessionId)
+  }
+
   return false
 }
 
@@ -87,7 +116,15 @@ export function buildConfirmationRows(draft: JobDraft): Array<{ label: string; v
 
   return [
     { label: isMultiAbsSelection ? 'Books' : 'Title', value: getDraftTitle(draft) },
-    { label: 'Source', value: draft.source === 'abs' ? 'AudioBookShelf' : 'Local file(s)' },
+    {
+      label: 'Source',
+      value:
+        draft.source === 'abs'
+          ? 'AudioBookShelf'
+          : draft.source === 'upload'
+            ? 'Browser upload'
+            : 'Local file(s)'
+    },
     { label: 'Model', value: draft.model },
     {
       label: 'Formats',
@@ -95,7 +132,12 @@ export function buildConfirmationRows(draft: JobDraft): Array<{ label: string; v
     },
     {
       label: 'Output',
-      value: draft.source === 'abs' ? 'Upload to ABS automatically' : (draft.outputFolder ?? 'None')
+      value:
+        draft.source === 'abs'
+          ? 'Upload to ABS automatically'
+          : draft.source === 'upload'
+            ? 'Download from Audiobook Forge'
+            : (draft.outputFolder ?? 'None')
     },
     { label: 'EPUB', value: getDraftEpubSummary(draft) }
   ]
@@ -128,6 +170,25 @@ export function buildQueueJobPayloads(draft: JobDraft, settings: AppSettings): Q
         epubPath: draft.epubPath,
         model,
         subtitleFormats: draft.subtitleFormats
+      }
+    ]
+  }
+
+  if (draft.source === 'upload' && draft.uploadSessionId) {
+    return [
+      {
+        source: 'upload',
+        title: getDraftTitle(draft),
+        audioFiles: draft.audioFiles,
+        outputPath: null,
+        absItemId: null,
+        absLibraryId: null,
+        absFolderId: null,
+        absAuthorName: null,
+        epubPath: null,
+        model,
+        subtitleFormats: draft.subtitleFormats,
+        uploadSessionId: draft.uploadSessionId
       }
     ]
   }
@@ -181,6 +242,9 @@ function getSelectedAbsItems(draft: JobDraft): AbsBookSummary[] {
 }
 
 function getDraftEpubSummary(draft: JobDraft): string {
+  if (draft.source === 'upload') {
+    return draft.uploadEpubFileName ?? 'None'
+  }
   if (draft.source !== 'abs') {
     return draft.epubPath ? getFilename(draft.epubPath) : 'None'
   }

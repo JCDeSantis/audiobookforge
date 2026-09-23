@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react'
-import type { WhisperModel, WhisperStorageInfo } from '../../../shared/types'
+import type {
+  ComputePreference,
+  ManagedStorageSummary,
+  WhisperModel,
+  WhisperStorageInfo
+} from '../../../shared/types'
 import { validateAbsUrl } from '../../../shared/urlSafety'
+import { getAppClient } from '../lib/appClient'
 import { WHISPER_MODELS } from '../lib/whisperModels'
 import { useAppStore } from '../store/useAppStore'
 
@@ -14,6 +20,9 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
   const [username, setUsername] = useState(settings.absUsername ?? '')
   const [password, setPassword] = useState('')
   const [defaultModel, setDefaultModel] = useState<WhisperModel>(settings.defaultModel)
+  const [computePreference, setComputePreference] = useState<ComputePreference>(
+    settings.computePreference ?? 'automatic'
+  )
   const [signingIn, setSigningIn] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [loginResult, setLoginResult] = useState<string | null>(null)
@@ -27,13 +36,17 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
   const [diagnosticsResult, setDiagnosticsResult] = useState<string | null>(null)
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null)
   const [exportingDiagnostics, setExportingDiagnostics] = useState(false)
+  const [managedStorage, setManagedStorage] = useState<ManagedStorageSummary | null>(null)
+  const [managedStorageError, setManagedStorageError] = useState<string | null>(null)
+  const [cleaningManagedStorage, setCleaningManagedStorage] = useState(false)
+  const [managedCleanupResult, setManagedCleanupResult] = useState<string | null>(null)
 
   useEffect(() => {
     let isActive = true
 
     const loadStorageInfo = async (): Promise<void> => {
       try {
-        const info = await window.electron.whisper.getStorageInfo()
+        const info = await getAppClient().whisper.getStorageInfo()
         if (!isActive) {
           return
         }
@@ -50,6 +63,18 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     }
 
     void loadStorageInfo()
+    void getAppClient()
+      .storage.getSummary()
+      .then((summary) => {
+        if (isActive) setManagedStorage(summary)
+      })
+      .catch((error) => {
+        if (isActive) {
+          setManagedStorageError(
+            error instanceof Error ? error.message : 'Failed to load managed storage.'
+          )
+        }
+      })
 
     return () => {
       isActive = false
@@ -57,6 +82,41 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
   }, [])
 
   const installedModelCount = storageInfo?.models.filter((model) => model.downloaded).length ?? 0
+
+  const formatBytes = (bytes: number): string => {
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
+  }
+
+  const handleManagedCleanup = async (): Promise<void> => {
+    setCleaningManagedStorage(true)
+    setManagedStorageError(null)
+    setManagedCleanupResult(null)
+    try {
+      const preview = await getAppClient().storage.previewCleanup()
+      if (preview.artifactCount === 0) {
+        setManagedCleanupResult('No unreferenced managed files are available to remove.')
+        return
+      }
+      const confirmed = window.confirm(
+        `Remove ${preview.artifactCount} managed file${preview.artifactCount === 1 ? '' : 's'} using ${formatBytes(preview.sizeBytes)}? Active jobs, external Windows outputs, and ABS files are excluded.`
+      )
+      if (!confirmed) return
+      const result = await getAppClient().storage.executeCleanup(preview.token)
+      const summary = await getAppClient().storage.getSummary()
+      setManagedStorage(summary)
+      setManagedCleanupResult(
+        `Removed ${result.deletedIds.length} managed file${result.deletedIds.length === 1 ? '' : 's'}${result.failedIds.length ? `; ${result.failedIds.length} could not be removed` : ''}.`
+      )
+    } catch (error) {
+      setManagedStorageError(
+        error instanceof Error ? error.message : 'Failed to clean managed storage.'
+      )
+    } finally {
+      setCleaningManagedStorage(false)
+    }
+  }
 
   const validateCurrentUrl = (): string | null => {
     const validation = validateAbsUrl(url)
@@ -80,8 +140,8 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     setClearResult(null)
 
     try {
-      await window.electron.whisper.clearModels()
-      const updatedInfo = await window.electron.whisper.getStorageInfo()
+      await getAppClient().whisper.clearModels()
+      const updatedInfo = await getAppClient().whisper.getStorageInfo()
       setStorageInfo(updatedInfo)
       setClearResult('Downloaded Whisper models cleared.')
     } catch (error) {
@@ -94,7 +154,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
   }
 
   const refreshStorageInfo = async (): Promise<void> => {
-    const updatedInfo = await window.electron.whisper.getStorageInfo()
+    const updatedInfo = await getAppClient().whisper.getStorageInfo()
     setStorageInfo(updatedInfo)
   }
 
@@ -104,7 +164,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     setClearResult(null)
 
     try {
-      await window.electron.whisper.deleteModel(model)
+      await getAppClient().whisper.deleteModel(model)
       await refreshStorageInfo()
       setClearResult('Whisper model removed.')
     } catch (error) {
@@ -120,7 +180,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     setDiagnosticsError(null)
 
     try {
-      const exportedPath = await window.electron.diagnostics.export()
+      const exportedPath = await getAppClient().diagnostics.export()
       if (exportedPath) {
         setDiagnosticsResult(`Diagnostics exported to ${exportedPath}`)
       }
@@ -144,17 +204,22 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     setFormError(null)
     setLoginResult(null)
     try {
-      const result = await window.electron.abs.login(url, username, password)
+      const result = await getAppClient().abs.login(url, username, password)
       const validation = validateAbsUrl(url)
       if (!validation.ok) return
       setUsername(result.username)
       setPassword('')
-      setLoginResult(`Signed in as ${result.username} on Audiobookshelf ${result.serverVersion}.`)
+      setLoginResult(
+        `Signed in as ${result.username} on Audiobookshelf ${result.serverVersion}.${
+          result.connectionWarning ? ` ${result.connectionWarning}` : ''
+        }`
+      )
       setSettings({
         ...settings,
         absUrl: validation.normalizedUrl,
         absUsername: result.username,
-        defaultModel
+        defaultModel,
+        computePreference
       })
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Audiobookshelf login failed.')
@@ -167,7 +232,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     setSigningOut(true)
     setFormError(null)
     try {
-      await window.electron.abs.logout()
+      await getAppClient().abs.logout()
       setUsername('')
       setPassword('')
       setLoginResult('Signed out of Audiobookshelf.')
@@ -189,9 +254,15 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
     setSaving(true)
     setFormError(null)
     try {
-      await window.electron.settings.setUrl(validation.normalizedUrl)
-      await window.electron.settings.setDefaultModel(defaultModel)
-      setSettings({ ...settings, absUrl: validation.normalizedUrl, defaultModel })
+      await getAppClient().settings.setUrl(validation.normalizedUrl)
+      await getAppClient().settings.setDefaultModel(defaultModel)
+      await getAppClient().settings.setComputePreference(computePreference)
+      setSettings({
+        ...settings,
+        absUrl: validation.normalizedUrl,
+        defaultModel,
+        computePreference
+      })
       onClose()
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Failed to save settings.')
@@ -253,7 +324,7 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
                 value={url}
               />
               <span className="text-xs leading-5 text-[#a87f7f]">
-                Sign-in requires HTTPS unless Audiobookshelf is running on this computer.
+                Public servers require HTTPS. Private-network HTTP is allowed with a security warning.
               </span>
             </label>
 
@@ -340,6 +411,20 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
             </select>
           </label>
 
+          <label className="grid gap-2">
+            <span className="text-sm font-medium text-[#f6e2e2]">Compute Backend</span>
+            <select
+              className="h-10 rounded-[14px] border border-[#482020] bg-[#170909] px-3 text-sm text-[#fff4f4] outline-none transition-colors focus:border-[#dc2626]"
+              onChange={(event) =>
+                setComputePreference(event.target.value as ComputePreference)
+              }
+              value={computePreference}
+            >
+              <option value="automatic">Automatic (CUDA with CPU fallback)</option>
+              <option value="cpu">Force CPU</option>
+            </select>
+          </label>
+
           <div className="rounded-lg border border-[#341616] bg-[#120707] px-4 py-4">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="max-w-lg">
@@ -404,6 +489,46 @@ export function AppSettingsPanel({ onClose }: AppSettingsPanelProps): React.JSX.
               title={storageError ?? clearResult ?? undefined}
             >
               {storageError ?? clearResult ?? '\u00A0'}
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-[#341616] bg-[#120707] px-4 py-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="max-w-lg">
+                <div className="text-sm font-medium text-[#f6e2e2]">Managed Application Data</div>
+                <div className="mt-1 text-sm leading-6 text-[#d9b7b7]">
+                  {managedStorage
+                    ? `${managedStorage.artifactCount} managed file${managedStorage.artifactCount === 1 ? '' : 's'} using ${formatBytes(managedStorage.totalBytes)}.`
+                    : 'Checking uploads, generated results, checkpoints, and temporary data...'}
+                </div>
+                <div className="mt-1 text-xs leading-5 text-[#a87f7f]">
+                  Cleanup removes only unreferenced app-managed files. Remove finished jobs first to release their results.
+                </div>
+              </div>
+              <button
+                className="rounded-md border border-[#5b2626] px-4 py-2 text-sm font-medium text-[#f0cbcb] transition-colors hover:border-[#dc2626] hover:text-[#fff4f4] disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={cleaningManagedStorage || !managedStorage}
+                onClick={() => void handleManagedCleanup()}
+                type="button"
+              >
+                {cleaningManagedStorage ? 'Checking...' : 'Preview Cleanup'}
+              </button>
+            </div>
+            {managedStorage && Object.keys(managedStorage.byCategory).length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-[#cba6a6]">
+                {Object.entries(managedStorage.byCategory).map(([category, usage]) => (
+                  <span className="rounded-full border border-[#321717] px-2.5 py-1" key={category}>
+                    {category}: {formatBytes(usage.bytes)}
+                  </span>
+                ))}
+              </div>
+            )}
+            <div
+              className={`stable-feedback mt-3 truncate text-xs leading-5 ${managedStorageError ? 'text-[#ff9f9f]' : 'text-[#9fe0bb]'}`}
+              role={managedStorageError ? 'alert' : 'status'}
+              title={managedStorageError ?? managedCleanupResult ?? undefined}
+            >
+              {managedStorageError ?? managedCleanupResult ?? '\u00A0'}
             </div>
           </div>
 

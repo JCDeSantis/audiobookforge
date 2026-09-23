@@ -1,0 +1,5 @@
+{
+  "absUrl": "https://abs.example.com/",
+  "absUsername": "jacob",
+  "defaultModel": "large-v3-turbo-q5_0"
+}

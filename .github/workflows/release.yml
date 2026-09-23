@@ -1,0 +1,313 @@
+name: Coordinated Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing v<package version> tag to validate
+        required: true
+        type: string
+      publish_stable:
+        description: Publish stable Windows and GHCR artifacts after every gate passes
+        required: true
+        default: false
+        type: boolean
+      validate_nvidia:
+        description: Require real CUDA transcription (needs a self-hosted linux/x64/nvidia runner)
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+  attestations: write
+
+concurrency:
+  group: coordinated-release
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      stable: ${{ steps.meta.outputs.stable }}
+      image: ${{ steps.meta.outputs.image }}
+      sha: ${{ steps.meta.outputs.sha }}
+      nvidia: ${{ steps.meta.outputs.nvidia }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: meta
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.release_tag }}
+          INPUT_STABLE: ${{ inputs.publish_stable }}
+          INPUT_NVIDIA: ${{ inputs.validate_nvidia }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            tag="${GITHUB_REF_NAME}"
+            stable=false
+          else
+            tag="${INPUT_TAG}"
+            stable="${INPUT_STABLE:-false}"
+          fi
+          [[ "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git rev-parse --verify "refs/tags/${tag}"
+          git checkout --detach "refs/tags/${tag}"
+          version=$(node -p "require('./package.json').version")
+          test "${tag}" = "v${version}"
+          node -e 'const p = require("./package.json"), l = require("./package-lock.json"); if (l.version !== p.version || l.packages[""].version !== p.version) throw new Error("Package and lockfile versions must match")'
+          if [[ "${stable}" == "true" ]] && [[ "$(gh release view "${tag}" --json isDraft --jq .isDraft 2>/dev/null || true)" == "false" ]]; then
+            echo 'This version is already published. Create a new version and tag.' >&2
+            exit 1
+          fi
+          sha=$(git rev-parse HEAD)
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "stable=${stable}" >> "${GITHUB_OUTPUT}"
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+          echo "nvidia=${INPUT_NVIDIA:-false}" >> "${GITHUB_OUTPUT}"
+
+  windows:
+    needs: metadata
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.metadata.outputs.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint -- --quiet
+      - run: npm run build
+      - run: npx electron-builder --win nsis --x64 --publish never
+      - run: npx electron-builder --win --dir --x64 --publish never
+      - run: npm run licenses
+      - name: Package unpacked build
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          if (!(Test-Path 'dist/win-unpacked/audiobook-forge.exe')) { throw 'Portable executable missing' }
+          Compress-Archive -Path "dist/win-unpacked/*" -DestinationPath "dist/audiobookforge-$env:VERSION-win-unpacked.zip"
+          foreach ($path in @("dist/audiobookforge-$env:VERSION-setup.exe", "dist/audiobookforge-$env:VERSION-win-unpacked.zip", 'dist/THIRD_PARTY_LICENSES.json')) {
+            if (!(Test-Path $path) -or (Get-Item $path).Length -eq 0) { throw "Missing release asset: $path" }
+          }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-${{ needs.metadata.outputs.version }}
+          if-no-files-found: error
+          path: |
+            dist/*-setup.exe
+            dist/*-win-unpacked.zip
+            dist/THIRD_PARTY_LICENSES.json
+
+  web-server:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.metadata.outputs.sha }}
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install without desktop native lifecycle scripts
+        run: npm ci --ignore-scripts
+      - run: npx vitest run src/core src/server src/shared
+      - run: npm run build:server
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+
+  docker-cpu-security:
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    outputs:
+      digest: ${{ steps.image.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.metadata.outputs.sha }}
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Build the universal release candidate image
+        id: image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: ${{ needs.metadata.outputs.image }}:candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          cache-from: type=gha,scope=universal-linux-amd64
+          cache-to: type=gha,mode=max,scope=universal-linux-amd64
+      - name: CPU-only startup smoke test
+        env:
+          IMAGE: ${{ needs.metadata.outputs.image }}@${{ steps.image.outputs.digest }}
+        run: |
+          docker pull "${IMAGE}"
+          docker run --detach --name abf-release-cpu --publish 127.0.0.1:3000:3000 --env ABF_WEB_PASSWORD=release-test "${IMAGE}"
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:3000/healthz && exit 0
+            sleep 2
+          done
+          docker logs abf-release-cpu
+          exit 1
+      - name: CPU transcription smoke test
+        env:
+          IMAGE: ${{ needs.metadata.outputs.image }}@${{ steps.image.outputs.digest }}
+        run: bash scripts/smoke-docker.sh "${IMAGE}" cpu
+      - name: Scan high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ needs.metadata.outputs.image }}@${{ steps.image.outputs.digest }}
+          severity: CRITICAL,HIGH
+          scanners: vuln
+          exit-code: '1'
+          format: table
+          output: docker-security.txt
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: docker-security
+          path: docker-security.txt
+      - name: Container logs
+        if: failure()
+        run: docker logs abf-release-cpu || true
+      - name: Remove smoke container
+        if: always()
+        run: docker rm -f abf-release-cpu || true
+
+  nvidia-smoke:
+    if: needs.metadata.outputs.nvidia == 'true'
+    needs: [metadata, docker-cpu-security]
+    runs-on: [self-hosted, linux, x64, nvidia]
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.metadata.outputs.sha }}
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Run a real CUDA Whisper transcription
+        env:
+          IMAGE: ${{ needs.metadata.outputs.image }}@${{ needs.docker-cpu-security.outputs.digest }}
+        run: bash scripts/smoke-docker.sh "${IMAGE}" cuda
+
+  publish:
+    if: >-
+      ${{ !cancelled() && needs.metadata.outputs.stable == 'true' &&
+          needs.windows.result == 'success' && needs.web-server.result == 'success' &&
+          needs.docker-cpu-security.result == 'success' &&
+          (needs.nvidia-smoke.result == 'success' ||
+           (needs.metadata.outputs.nvidia != 'true' && needs.nvidia-smoke.result == 'skipped')) }}
+    needs: [metadata, windows, web-server, docker-cpu-security, nvidia-smoke]
+    runs-on: ubuntu-24.04
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+      VERSION: ${{ needs.metadata.outputs.version }}
+      IMAGE: ${{ needs.metadata.outputs.image }}
+      DIGEST: ${{ needs.docker-cpu-security.outputs.digest }}
+      SOURCE_SHA: ${{ needs.metadata.outputs.sha }}
+      NVIDIA_RESULT: ${{ needs.nvidia-smoke.result }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.metadata.outputs.sha }}
+          fetch-depth: 0
+      - uses: actions/download-artifact@v7
+        with:
+          name: windows-${{ needs.metadata.outputs.version }}
+          path: release-assets
+      - uses: actions/download-artifact@v7
+        with:
+          name: docker-security
+          path: release-assets
+      - name: Prepare release downloads and instructions
+        run: |
+          cp compose.yml compose.gpu.yml release-assets/
+          cp docs/docker.md release-assets/DOCKER.md
+          printf 'ABF_VERSION=%s\n' "${VERSION}" > release-assets/release.env
+          printf '%s@%s\n' "${IMAGE}" "${DIGEST}" > release-assets/docker-image.txt
+          (cd release-assets && sha256sum * > SHA256SUMS.txt)
+          cat > release-body.md <<EOF
+          ## Windows
+          Download the setup.exe installer or extract the win-unpacked.zip portable build and run audiobook-forge.exe.
+
+          ## Docker (linux/amd64)
+          Image: ${IMAGE}:${VERSION}
+          Exact image: ${IMAGE}@${DIGEST}
+          Download compose.yml, compose.gpu.yml, and release.env. Rename release.env to .env, then follow DOCKER.md to create the password secret and start the service.
+
+          ## Validation
+          Windows tests/build, browser tests, CPU container startup/transcription, and high/critical vulnerability scan passed.
+          NVIDIA hardware test: ${NVIDIA_RESULT}. If skipped, CUDA is included but is not hardware-qualified for this release; use CPU for the validated path.
+          SBOM and provenance are attached to the container image. SHA256SUMS.txt covers the downloadable assets.
+          EOF
+          gh release view "${RELEASE_TAG}" >/dev/null 2>&1 || \
+            gh release create "${RELEASE_TAG}" --draft --verify-tag --notes-file release-body.md --title "Audiobook Forge ${RELEASE_TAG}"
+          gh release edit "${RELEASE_TAG}" --notes-file release-body.md
+          gh release upload "${RELEASE_TAG}" release-assets/* --clobber
+      - name: Authenticate to GHCR
+        run: echo "${{ github.token }}" | docker login ghcr.io --username "${{ github.actor }}" --password-stdin
+      - uses: docker/setup-buildx-action@v3
+      - name: Promote the exact tested image without rebuilding
+        run: |
+          set -euo pipefail
+          for tag in "${VERSION}" "sha-${SOURCE_SHA}"; do
+            if docker buildx imagetools inspect "${IMAGE}:${tag}" > existing-image.txt 2> registry-error.txt; then
+              existing=$(awk '/^Digest:/ {print $2; exit}' existing-image.txt)
+              test "${existing}" = "${DIGEST}" || { echo "Refusing to overwrite ${IMAGE}:${tag}" >&2; exit 1; }
+            elif ! grep -Eqi 'not found|manifest unknown' registry-error.txt; then
+              cat registry-error.txt >&2
+              exit 1
+            fi
+          done
+          docker buildx imagetools create \
+            --tag "${IMAGE}:${VERSION}" --tag "${IMAGE}:sha-${SOURCE_SHA}" \
+            "${IMAGE}@${DIGEST}"
+      - name: Publish the coordinated GitHub release
+        run: gh release edit "${RELEASE_TAG}" --draft=false
+
+  update-latest:
+    if: ${{ !cancelled() && needs.publish.result == 'success' }}
+    needs: [metadata, docker-cpu-security, publish]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Update the latest Docker channel
+        env:
+          IMAGE: ${{ needs.metadata.outputs.image }}
+          DIGEST: ${{ needs.docker-cpu-security.outputs.digest }}
+        run: docker buildx imagetools create --tag "${IMAGE}:latest" "${IMAGE}@${DIGEST}"

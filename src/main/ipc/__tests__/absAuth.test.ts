@@ -65,11 +65,17 @@ describe('Audiobookshelf user authentication', () => {
     expect(JSON.stringify(vi.mocked(saveAbsSession).mock.calls)).not.toContain('secret-password')
   })
 
-  it('rejects password login over non-loopback HTTP', async () => {
-    await expect(loginToAbs('http://abs.local', 'jacob', 'secret-password')).rejects.toThrow(
-      'Audiobookshelf sign-in requires HTTPS unless the server is on this computer.'
-    )
-    expect(axios.post).not.toHaveBeenCalled()
+  it('allows private-network HTTP with an explicit connection warning', async () => {
+    vi.mocked(axios.post).mockResolvedValueOnce({
+      data: {
+        user: { username: 'jacob', type: 'user', accessToken: 'token' },
+        serverSettings: { version: '2.29.0' }
+      }
+    })
+
+    await expect(loginToAbs('http://abs.local', 'jacob', 'secret-password')).resolves.toMatchObject({
+      connectionWarning: expect.stringContaining('not encrypted')
+    })
   })
 
   it('refreshes an expired access token and stores the rotated session', async () => {
@@ -134,5 +140,27 @@ describe('Audiobookshelf user authentication', () => {
         maxRedirects: 0
       })
     )
+  })
+
+  it('maps an ABS ebook file id to a portable authenticated download URL', async () => {
+    vi.mocked(axios.get).mockResolvedValueOnce({
+      data: {
+        id: 'book-1',
+        media: {
+          ebookFile: {
+            ino: 'ebook-file-9',
+            metadata: { path: '/audiobooks/Author/Book/Book.epub' }
+          }
+        }
+      }
+    })
+
+    await expect(
+      fetchAbsBook('https://abs.example.com', 'access-token', 'book-1')
+    ).resolves.toMatchObject({
+      ebookPath: '/audiobooks/Author/Book/Book.epub',
+      ebookDownloadUrl:
+        'https://abs.example.com/api/items/book-1/file/ebook-file-9/download'
+    })
   })
 })

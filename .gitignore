@@ -7,3 +7,6 @@ out
 .DS_Store
 .eslintcache
 *.log*
+secrets/
+test-results/
+playwright-report/

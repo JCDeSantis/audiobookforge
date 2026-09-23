@@ -1,4 +1,5 @@
-import React from 'react'
+import React, { useRef, useState } from 'react'
+import { getAppClient, isWebRuntime } from '../lib/appClient'
 import { getLocalSourceTitle } from '../lib/sourceTitle'
 import { useAppStore } from '../store/useAppStore'
 
@@ -9,8 +10,13 @@ export function SourceSelector(): React.JSX.Element {
     selectLocalFiles,
     clearSelectedSource,
     setAbsModalOpen,
-    setSettingsOpen
+    setSettingsOpen,
+    selectWebUpload
   } = useAppStore()
+  const uploadInput = useRef<HTMLInputElement>(null)
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const webRuntime = isWebRuntime()
 
   const absSelectionCount = wizard.absItems.length
   const isMultiAbsSelection = wizard.source === 'abs' && absSelectionCount > 1
@@ -21,18 +27,41 @@ export function SourceSelector(): React.JSX.Element {
         ? `${wizard.absItem.title} - ${wizard.absItem.authorName}`
         : wizard.source === 'local' && wizard.audioFiles.length > 0
           ? getLocalSourceTitle(wizard.audioFiles)
+          : wizard.source === 'upload' && wizard.audioFiles.length > 0
+            ? getLocalSourceTitle(wizard.audioFiles)
           : ''
   const sourceDescription =
     wizard.source === 'abs'
       ? isMultiAbsSelection
         ? 'Each selected AudioBookShelf title will queue as its own job with the same options.'
         : 'AudioBookShelf library item'
-      : 'Local audiobook files'
+      : wizard.source === 'upload'
+        ? 'Uploaded audiobook files'
+        : 'Local audiobook files'
 
   const handleBrowseFiles = async (): Promise<void> => {
-    const paths = await window.electron.files.pickAudio()
+    const paths = await getAppClient().files.pickAudio()
     if (paths && paths.length > 0) {
       selectLocalFiles(paths)
+    }
+  }
+
+  const handleWebUpload = async (files: FileList | null): Promise<void> => {
+    if (!files || files.length === 0) return
+    setUploadError(null)
+    setUploadPercent(0)
+    try {
+      const selection = await getAppClient().uploads.uploadFiles(Array.from(files), setUploadPercent)
+      selectWebUpload(
+        selection.sessionId,
+        selection.audioFileNames,
+        selection.epubFileName
+      )
+    } catch (error) {
+      setUploadError(error instanceof Error ? error.message : 'Upload failed.')
+    } finally {
+      setUploadPercent(null)
+      if (uploadInput.current) uploadInput.current.value = ''
     }
   }
 
@@ -83,14 +112,31 @@ export function SourceSelector(): React.JSX.Element {
       <div className="mt-3 grid gap-2">
         <button
           className="group flex h-[3.45rem] items-center justify-between rounded-[16px] border border-[#482020] bg-[#190909] px-4 text-left transition-colors hover:border-[#dc2626] hover:bg-[#220c0c]"
-          onClick={handleBrowseFiles}
+          onClick={() => (webRuntime ? uploadInput.current?.click() : void handleBrowseFiles())}
         >
           <div>
-            <div className="text-sm font-semibold text-[#fff3f3]">Browse Files</div>
-            <div className="text-xs text-[#c7a3a3]">Pick one or more `.m4b` or `.mp3` files</div>
+            <div className="text-sm font-semibold text-[#fff3f3]">
+              {webRuntime ? 'Upload Files' : 'Browse Files'}
+            </div>
+            <div className="text-xs text-[#c7a3a3]">
+              {uploadPercent === null
+                ? 'Pick `.m4b`/`.mp3` files and optional `.epub`; reselect matching files to resume'
+                : `Uploading… ${uploadPercent}%`}
+            </div>
           </div>
           <div className="text-lg text-[#fff3f3]">-&gt;</div>
         </button>
+        {webRuntime && (
+          <input
+            accept=".m4b,.mp3,.epub"
+            className="hidden"
+            multiple
+            onChange={(event) => void handleWebUpload(event.target.files)}
+            ref={uploadInput}
+            type="file"
+          />
+        )}
+        {uploadError && <div className="truncate text-xs text-[#ff9b9b]">{uploadError}</div>}
 
         <button
           className="group flex h-[3.45rem] items-center justify-between rounded-[16px] border border-[#482020] bg-[#190909] px-4 text-left transition-colors hover:border-[#dc2626] hover:bg-[#220c0c]"

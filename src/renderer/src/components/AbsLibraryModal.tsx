@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import type { AbsBook } from '../../../shared/types'
+import { getAppClient } from '../lib/appClient'
 import { useAppStore } from '../store/useAppStore'
 
 type BookSortOption = 'title' | 'author' | 'missing-srt' | 'has-srt'
@@ -125,7 +126,7 @@ export function AbsLibraryModal(): React.JSX.Element {
     setLoading(true)
     setError(null)
     try {
-      const libraries = await window.electron.abs.getLibraries()
+      const libraries = await getAppClient().abs.getLibraries()
       setAbsLibraries(libraries)
       setAbsConnected(true)
       if (libraries.length > 0 && !selectedLibraryId) {
@@ -150,7 +151,7 @@ export function AbsLibraryModal(): React.JSX.Element {
       setLoading(true)
       setError(null)
       try {
-        const books = await window.electron.abs.getBooks(libraryId)
+        const books = await getAppClient().abs.getBooks(libraryId)
         setAbsBooks(libraryId, books)
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : 'Failed to load books.')
@@ -165,11 +166,11 @@ export function AbsLibraryModal(): React.JSX.Element {
     setLoading(true)
     setError(null)
     try {
-      const libraries = await window.electron.abs.getLibraries()
+      const libraries = await getAppClient().abs.getLibraries()
       setAbsLibraries(libraries)
 
       if (selectedLibraryId) {
-        const books = await window.electron.abs.getBooks(selectedLibraryId)
+        const books = await getAppClient().abs.getBooks(selectedLibraryId)
         setAbsBooks(selectedLibraryId, books)
       }
     } catch (refreshError) {
@@ -408,11 +409,12 @@ export function AbsLibraryModal(): React.JSX.Element {
                 const isQueued = queuedAbsIds.has(book.id)
                 const isSelected = selectedBookIds.has(book.id)
                 const selectionNumber = selectedBookOrder.get(book.id)
+                const series = book.series?.[0]
 
                 return (
                   <button
                     key={book.id}
-                    className={`flex h-[9.25rem] flex-col overflow-hidden rounded-[18px] border px-4 py-3 text-left transition-colors ${
+                    className={`flex h-[11.25rem] min-w-0 flex-col overflow-hidden rounded-[18px] border px-4 py-3 text-left transition-colors ${
                       isSelected
                         ? 'border-[#dc2626] bg-[#1c0a0a] shadow-[0_16px_40px_rgba(120,20,20,0.22)]'
                         : 'border-[#301717] bg-[linear-gradient(180deg,#150808_0%,#100505_100%)] hover:border-[#dc2626] hover:bg-[#190909]'
@@ -423,10 +425,10 @@ export function AbsLibraryModal(): React.JSX.Element {
                     }
                     type="button"
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex shrink-0 items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
                         <h3
-                          className="stable-clamp-2 h-12 text-sm font-semibold leading-6 text-[#fff1f1]"
+                          className="stable-clamp-2 h-12 break-words text-sm font-semibold leading-6 text-[#fff1f1]"
                           title={book.title}
                         >
                           {book.title}
@@ -450,7 +452,25 @@ export function AbsLibraryModal(): React.JSX.Element {
                       </div>
                     </div>
 
-                    <div className="mt-3 border-t border-[#341616] pt-3">
+                    <div className="mt-2 flex h-6 min-w-0 shrink-0 items-center gap-2.5 text-xs leading-5">
+                      {series && (
+                        <>
+                          <span
+                            className="min-w-0 flex-1 truncate text-[#d4afaf]"
+                            title={series.name}
+                          >
+                            {series.name}
+                          </span>
+                          {series.sequence != null && (
+                            <span className="shrink-0 whitespace-nowrap rounded-md bg-[#2a0f0f] px-2 py-0.5 font-medium text-[#ffe2e2]">
+                              Book {series.sequence}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
+
+                    <div className="mt-auto shrink-0 border-t border-[#341616] pt-3">
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#b98a8a]">
                           Audiobook Length

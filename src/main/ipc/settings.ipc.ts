@@ -1,47 +1,23 @@
-import { ipcMain, app } from 'electron'
-import { readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { join } from 'path'
+import { ipcMain } from 'electron'
 import keytar from 'keytar'
-import { WHISPER_MODELS } from '../whisper/models'
 import { IPC } from '../../shared/types'
-import { validateAbsUrl } from '../../shared/urlSafety'
-import type { AppSettings, WhisperModel } from '../../shared/types'
+import type { AppSettings, ComputePreference, WhisperModel } from '../../shared/types'
+import { getDesktopDataPaths } from '../platform/desktopDataPaths'
+import { AppSettingsStore } from '../../core/settings/appSettingsStore'
 
 const SERVICE = 'audiobookforge'
 const LEGACY_ACCOUNT = 'abs-api-key'
 const SESSION_ACCOUNT = 'abs-session'
-const DEFAULT_MODEL: WhisperModel = 'large-v3-turbo-q5_0'
-const VALID_MODELS = new Set<WhisperModel>(WHISPER_MODELS.map((model) => model.id))
-
-function getSettingsPath(): string {
-  return join(app.getPath('userData'), 'settings.json')
-}
-
-function getDefaultModel(model: unknown): WhisperModel {
-  return typeof model === 'string' && VALID_MODELS.has(model as WhisperModel)
-    ? (model as WhisperModel)
-    : DEFAULT_MODEL
+function getStore(): AppSettingsStore {
+  return new AppSettingsStore(getDesktopDataPaths().settingsFile)
 }
 
 export function loadSettings(): AppSettings {
-  try {
-    const raw = readFileSync(getSettingsPath(), 'utf-8')
-    const parsed = JSON.parse(raw) as Partial<AppSettings>
-    const validatedUrl = typeof parsed.absUrl === 'string' ? validateAbsUrl(parsed.absUrl) : null
-
-    return {
-      absUrl: validatedUrl && validatedUrl.ok ? validatedUrl.normalizedUrl : '',
-      absUsername: typeof parsed.absUsername === 'string' ? parsed.absUsername : '',
-      defaultModel: getDefaultModel(parsed.defaultModel)
-    }
-  } catch {
-    return { absUrl: '', absUsername: '', defaultModel: DEFAULT_MODEL }
-  }
+  return getStore().load()
 }
 
 function saveSettings(settings: AppSettings): void {
-  mkdirSync(app.getPath('userData'), { recursive: true })
-  writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2), 'utf-8')
+  getStore().save(settings)
 }
 
 export interface AbsSession {
@@ -95,23 +71,17 @@ export function registerSettingsIpc(): void {
   })
 
   ipcMain.handle(IPC.SETTINGS_SET_URL, (_event, url: string) => {
-    const validation = validateAbsUrl(url)
-    if (!validation.ok) {
-      throw new Error(validation.error)
-    }
-
-    const settings = loadSettings()
-    settings.absUrl = validation.normalizedUrl
-    saveSettings(settings)
+    getStore().setUrl(url)
   })
 
   ipcMain.handle(IPC.SETTINGS_SET_DEFAULT_MODEL, (_event, model: WhisperModel) => {
-    if (!VALID_MODELS.has(model)) {
-      throw new Error('Unsupported whisper model.')
-    }
-
-    const settings = loadSettings()
-    settings.defaultModel = model
-    saveSettings(settings)
+    getStore().setDefaultModel(model)
   })
+
+  ipcMain.handle(
+    IPC.SETTINGS_SET_COMPUTE_PREFERENCE,
+    (_event, preference: ComputePreference) => {
+      getStore().setComputePreference(preference)
+    }
+  )
 }

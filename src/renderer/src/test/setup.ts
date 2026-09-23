@@ -3,20 +3,34 @@ import { cleanup } from '@testing-library/react'
 import { afterEach } from 'vitest'
 
 const defaultElectronMock = {
+  runtime: {
+    getCapabilities: async () => ({
+      runtime: 'windows-desktop' as const,
+      nativeFilePicker: true,
+      browserUploads: false,
+      nativeOutputFolder: true,
+      resultDownloads: false,
+      singleUser: true as const
+    })
+  },
   settings: {
     get: async () => ({
       absUrl: '',
       absUsername: '',
-      defaultModel: 'large-v3-turbo-q5_0' as const
+      defaultModel: 'large-v3-turbo-q5_0' as const,
+      computePreference: 'automatic' as const
     }),
     setUrl: async () => undefined,
-    setDefaultModel: async () => undefined
+    setDefaultModel: async () => undefined,
+    setComputePreference: async () => undefined
   },
   files: {
     pickAudio: async () => null,
     pickEpub: async () => null,
     pickOutputFolder: async () => null,
-    showInExplorer: async () => undefined
+    showInExplorer: async () => undefined,
+    downloadArtifact: async () => undefined,
+    downloadJobResults: async () => undefined
   },
   queue: {
     add: async () => {
@@ -41,6 +55,11 @@ const defaultElectronMock = {
       throw new Error('abs.getBook mock not configured')
     }
   },
+  uploads: {
+    uploadFiles: async () => {
+      throw new Error('uploads.uploadFiles mock not configured')
+    }
+  },
   whisper: {
     cancel: async () => undefined,
     getStorageInfo: async () => ({
@@ -58,6 +77,16 @@ const defaultElectronMock = {
   },
   diagnostics: {
     export: async () => null
+  },
+  storage: {
+    getSummary: async () => ({ totalBytes: 0, artifactCount: 0, byCategory: {} }),
+    previewCleanup: async () => ({
+      token: 'preview-token',
+      revision: 0,
+      artifactCount: 0,
+      sizeBytes: 0
+    }),
+    executeCleanup: async () => ({ deletedIds: [], failedIds: [] })
   }
 }
 

@@ -1,3 +1,5 @@
+export { mergeSrts, offsetSrtContent } from '../../shared/subtitleSegments'
+
 const MIN_SEGMENT_S = 60
 const MAX_SEGMENT_S = 1200
 const PAD_S = 0.35
@@ -204,21 +206,6 @@ export function buildOverlappingSegments(
   return windows
 }
 
-/**
- * Add offsetSeconds to every timestamp in an SRT file's content string.
- */
-export function offsetSrtContent(srtContent: string, offsetSeconds: number): string {
-  if (offsetSeconds === 0) return srtContent
-  return srtContent.replace(
-    /(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})/g,
-    (_, h1, m1, s1, ms1, h2, m2, s2, ms2) => {
-      const t1 = toSec(h1, m1, s1, ms1) + offsetSeconds
-      const t2 = toSec(h2, m2, s2, ms2) + offsetSeconds
-      return `${fromSec(Math.max(0, t1))} --> ${fromSec(Math.max(0, t2))}`
-    }
-  )
-}
-
 function toSec(h: string, m: string, s: string, ms: string): number {
   return +h * 3600 + +m * 60 + +s + +ms / 1000
 }
@@ -239,26 +226,6 @@ function p2(n: number): string {
 
 function p3(n: number): string {
   return String(n).padStart(3, '0')
-}
-
-/**
- * Merge multiple SRT content strings into one, renumbering blocks sequentially.
- */
-export function mergeSrts(srtContents: string[]): string {
-  let counter = 1
-  const outputBlocks: string[] = []
-
-  for (const content of srtContents) {
-    if (!content.trim()) continue
-    const blocks = content.trim().split(/\n\s*\n/)
-    for (const block of blocks) {
-      const lines = block.trim().split('\n')
-      if (lines.length < 2) continue
-      outputBlocks.push([String(counter++), ...lines.slice(1)].join('\n'))
-    }
-  }
-
-  return outputBlocks.join('\n\n') + '\n'
 }
 
 export function parseSrtContent(srtContent: string): SubtitleCue[] {

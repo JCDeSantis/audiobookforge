@@ -2,7 +2,6 @@ function isPrivateIpv4(hostname: string): boolean {
   return (
     /^10\./.test(hostname) ||
     /^127\./.test(hostname) ||
-    /^169\.254\./.test(hostname) ||
     /^192\.168\./.test(hostname) ||
     /^172\.(1[6-9]|2\d|3[0-1])\./.test(hostname)
   )
@@ -12,9 +11,18 @@ function isPrivateIpv6(hostname: string): boolean {
   const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '')
   return (
     normalized === '::1' ||
-    normalized.startsWith('fe80:') ||
     normalized.startsWith('fc') ||
     normalized.startsWith('fd')
+  )
+}
+
+export function isBlockedNetworkHostname(hostname: string): boolean {
+  const normalized = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '')
+  return (
+    normalized === '0.0.0.0' ||
+    normalized === '::' ||
+    /^169\.254\./.test(normalized) ||
+    normalized.startsWith('fe80:')
   )
 }
 
@@ -57,6 +65,10 @@ export function validateAbsUrl(
 
   if (parsedUrl.username || parsedUrl.password) {
     return { ok: false, error: 'Remove embedded credentials and sign in with username and password.' }
+  }
+
+  if (isBlockedNetworkHostname(parsedUrl.hostname)) {
+    return { ok: false, error: 'AudioBookShelf URLs cannot target link-local or metadata hosts.' }
   }
 
   if (parsedUrl.search || parsedUrl.hash) {

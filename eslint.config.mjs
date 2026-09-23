@@ -28,5 +28,29 @@ export default defineConfig(
       ...eslintPluginReactRefresh.configs.vite.rules
     }
   },
+  {
+    files: ['src/core/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: ['electron', 'keytar', 'ffmpeg-static', 'ffprobe-static'],
+          patterns: ['**/main/**', '**/preload/**', '**/renderer/**', '**/server/**']
+        }
+      ]
+    }
+  },
+  {
+    files: ['src/server/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: ['electron', 'keytar', 'ffmpeg-static', 'ffprobe-static'],
+          patterns: ['**/main/**', '**/preload/**', '**/renderer/**']
+        }
+      ]
+    }
+  },
   eslintConfigPrettier
 )

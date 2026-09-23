@@ -2,17 +2,31 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { IPC } from '../shared/types'
 
 const electron = {
+  runtime: {
+    getCapabilities: () => ipcRenderer.invoke(IPC.RUNTIME_CAPABILITIES)
+  },
+
   settings: {
     get: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
     setUrl: (url: string) => ipcRenderer.invoke(IPC.SETTINGS_SET_URL, url),
-    setDefaultModel: (model: string) => ipcRenderer.invoke(IPC.SETTINGS_SET_DEFAULT_MODEL, model)
+    setDefaultModel: (model: string) => ipcRenderer.invoke(IPC.SETTINGS_SET_DEFAULT_MODEL, model),
+    setComputePreference: (preference: string) =>
+      ipcRenderer.invoke(IPC.SETTINGS_SET_COMPUTE_PREFERENCE, preference)
   },
 
   files: {
     pickAudio: () => ipcRenderer.invoke(IPC.FILES_PICK_AUDIO),
     pickEpub: () => ipcRenderer.invoke(IPC.FILES_PICK_EPUB),
     pickOutputFolder: () => ipcRenderer.invoke(IPC.FILES_PICK_OUTPUT_FOLDER),
-    showInExplorer: (path: string) => ipcRenderer.invoke(IPC.FILES_SHOW_IN_EXPLORER, path)
+    showInExplorer: (path: string) => ipcRenderer.invoke(IPC.FILES_SHOW_IN_EXPLORER, path),
+    downloadArtifact: () =>
+      Promise.reject(new Error('Managed result downloads are available in the web runtime only.')),
+    downloadJobResults: () =>
+      Promise.reject(new Error('Managed result downloads are available in the web runtime only.'))
+  },
+
+  uploads: {
+    uploadFiles: () => Promise.reject(new Error('Browser uploads are unavailable in Electron.'))
   },
 
   queue: {
@@ -55,6 +69,12 @@ const electron = {
 
   diagnostics: {
     export: () => ipcRenderer.invoke(IPC.DIAGNOSTICS_EXPORT)
+  },
+
+  storage: {
+    getSummary: () => ipcRenderer.invoke(IPC.STORAGE_SUMMARY),
+    previewCleanup: () => ipcRenderer.invoke(IPC.STORAGE_CLEANUP_PREVIEW),
+    executeCleanup: (token: string) => ipcRenderer.invoke(IPC.STORAGE_CLEANUP_EXECUTE, token)
   }
 }
 
