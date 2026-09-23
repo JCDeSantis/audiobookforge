@@ -3,6 +3,9 @@
 .agents
 .superpowers
 .worktrees
+.tmp-*
+test-results
+playwright-report
 .vscode
 dist
 node_modules

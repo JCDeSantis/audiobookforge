@@ -6,7 +6,7 @@ The web runtime is intentionally single-user and processes one transcription job
 
 ## Requirements
 
-- Docker Engine with Compose v2
+- Docker Engine with Compose v2 (2.30.0 or newer for the `gpus` override)
 - An `amd64` Linux host
 - Enough persistent storage for uploads, decoded working audio, models, checkpoints, and results
 - For GPU use: an NVIDIA GPU, NVIDIA Container Toolkit, and a compatible Linux driver
@@ -15,28 +15,33 @@ The image pins Ubuntu 22.04, CUDA 12.4.1 runtime libraries, Ubuntu FFmpeg, and w
 
 ## Install and start
 
+Download `compose.yml`, `compose.gpu.yml`, and `release.env` from the desired GitHub release into one directory. Rename `release.env` to `.env` to pin that release's image version. No source checkout or local image build is needed.
+
 Create the password secret before starting the container:
 
 ```sh
 mkdir -p secrets
+chmod 700 secrets
 printf '%s' 'replace-with-a-long-unique-password' > secrets/web_password.txt
-chmod 600 secrets/web_password.txt
+chmod 644 secrets/web_password.txt
 ```
 
 CPU or automatic CPU fallback:
 
 ```sh
-ABF_VERSION=latest docker compose pull
-ABF_VERSION=latest docker compose up -d
+docker compose pull
+docker compose up -d --no-build
 ```
 
-For reproducible deployments, replace `latest` with the immutable version shown on the GitHub release and keep that value in a local `.env` file as `ABF_VERSION=<version>`.
+The private `secrets` directory restricts host access. The mounted file must be readable by container UID 10001; mode `600` owned by a different host UID prevents startup. Compose file secrets preserve host file permissions.
 
-When building the development branch locally, replace `pull` with:
+The image defaults to `latest` if `.env` is absent. For reproducible deployments, keep `ABF_VERSION=<version>` from the release in `.env` (without the tag's leading `v`).
+
+When building a source checkout locally, use the separate build override:
 
 ```sh
-docker compose build
-docker compose up -d
+docker compose -f compose.yml -f compose.build.yml build
+docker compose -f compose.yml -f compose.build.yml up -d --no-build
 ```
 
 Open `http://localhost:3000` and sign in with the configured password. Application state is stored in the `audiobookforge-data` volume mounted at `/data`.
@@ -46,7 +51,7 @@ Open `http://localhost:3000` and sign in with the configured password. Applicati
 Install and validate NVIDIA Container Toolkit on the host first. Then start the same image with the GPU override:
 
 ```sh
-docker compose -f compose.yml -f compose.gpu.yml up -d
+docker compose -f compose.yml -f compose.gpu.yml up -d --no-build
 ```
 
 Confirm the host can expose the GPU:
@@ -56,6 +61,8 @@ docker compose -f compose.yml -f compose.gpu.yml exec audiobookforge nvidia-smi
 ```
 
 The application reports the selected backend and any CPU fallback in job details and diagnostics. Choose **Force CPU** in Settings when GPU use is not desired. CPU-only startup never requires NVIDIA Container Toolkit.
+
+Release notes explicitly record whether the optional real NVIDIA test passed or was skipped. Without a GPU runner, releases are qualified on CPU only; the bundled CUDA path remains unverified on hardware for that release.
 
 Automatic mode performs a short CUDA Whisper preflight on the first job after the model is ready. This validates the bundled CUDA executable and libraries—not just `nvidia-smi`—before selecting CUDA; a failed preflight records the classified reason and starts the job on CPU.
 
@@ -114,7 +121,7 @@ Upgrade only after taking a backup and changing the pinned `ABF_VERSION` in `.en
 
 ```sh
 docker compose pull
-docker compose up -d
+docker compose up -d --no-build
 docker compose ps
 docker compose logs --tail=100 audiobookforge
 ```
@@ -123,7 +130,8 @@ Persistence writes are versioned, atomic, and backed up. If migration or recover
 
 ## Troubleshooting
 
-- **Container will not start:** verify `secrets/web_password.txt` exists, is non-empty, and is readable by Docker.
+- **Container will not start:** verify `secrets/web_password.txt` exists, is non-empty, and is readable by container UID 10001; use the directory/file permissions above.
+- **Image pull denied:** check the version in `.env`. The maintainer must make the GHCR package public for anonymous pulls; private installations require `docker login ghcr.io` with package-read access.
 - **Health check fails:** inspect `docker compose logs audiobookforge` and confirm `/data` is writable.
 - **CUDA is not selected:** run `nvidia-smi` inside the GPU Compose service, confirm Container Toolkit configuration, and inspect diagnostics for fallback classification.
 - **Out of disk space:** free capacity in the Docker data root or `/data`; Audiobook Forge reserves processing space and reports ENOSPC without deleting external files.

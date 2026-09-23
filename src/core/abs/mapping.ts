@@ -36,7 +36,11 @@ export interface AbsApiItem {
   isFile?: boolean
   libraryFiles?: AbsApiLibraryFile[]
   media?: {
-    metadata?: { title?: string; authorName?: string }
+    metadata?: {
+      title?: string
+      authorName?: string
+      series?: { name?: string; sequence?: string | number | null }[] | null
+    }
     duration?: number
     coverPath?: string
     audioFiles?: AbsApiAudioFile[]
@@ -74,6 +78,12 @@ export function mapAbsItemToBook(item: AbsApiItem, baseUrl: string): AbsBook {
     isFile: item.isFile ?? false,
     title: metadata.title ?? 'Unknown',
     authorName: metadata.authorName ?? 'Unknown',
+    series: (metadata.series ?? []).flatMap((series) => {
+      const name = series.name?.trim()
+      if (!name) return []
+      const sequence = series.sequence == null ? null : String(series.sequence).trim() || null
+      return [{ name, sequence }]
+    }),
     duration: media.duration ?? 0,
     cover: media.coverPath ? `${baseUrl}/api/items/${item.id}/cover` : null,
     hasSubtitles: (item.libraryFiles ?? []).some(isSubtitleFile),

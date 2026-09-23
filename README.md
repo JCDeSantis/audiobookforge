@@ -1,6 +1,6 @@
 # Audiobook Forge
 
-![Version](https://img.shields.io/badge/version-v1.1-d92a3d?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-v1.2.0-d92a3d?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%2B%20Docker-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 ![License](https://img.shields.io/badge/license-MIT-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 
@@ -52,7 +52,7 @@ Instead, Audiobook Forge helps create subtitle files for workflows such as:
 
 ### Windows Release
 
-Each release is intended to publish two Windows assets to GitHub Releases:
+Windows and Docker share one version. Published releases include these Windows assets on [GitHub Releases](https://github.com/JCDeSantis/audiobookforge/releases):
 
 - a Windows installer
 - a portable `win-unpacked.zip` build that can be extracted and run from a folder
@@ -78,11 +78,47 @@ Model guidance:
 
 Portable build note:
 
-- after extracting the portable zip, run `Audiobook Forge.exe` from the unpacked folder
+- after extracting the portable zip, run `audiobook-forge.exe` from the unpacked folder
 
 ### Docker Web Runtime
 
 The Docker runtime uses the same product and queue workflow through an authenticated browser interface. It supports browser uploads and Audiobookshelf sources, one processing worker, automatic CUDA selection, CPU fallback, result downloads, retention, and managed cleanup.
+
+Requirements: an **amd64 Linux host**, Docker Engine, and Docker Compose v2. NVIDIA use requires Compose **2.30.0 or newer**, NVIDIA Container Toolkit, and a compatible driver. No GPU is needed for CPU transcription.
+
+1. From the same [GitHub release](https://github.com/JCDeSantis/audiobookforge/releases), download `compose.yml`, `compose.gpu.yml`, and `release.env` into a new directory. Rename `release.env` to `.env`; it pins the matching image version.
+2. In that directory, create a login password file (Linux shell):
+
+   ```sh
+   mkdir -p secrets
+   chmod 700 secrets
+   printf '%s' 'replace-with-a-long-unique-password' > secrets/web_password.txt
+   chmod 644 secrets/web_password.txt
+   ```
+
+   The private directory protects the host copy. The file must be readable by the container's non-root user because Compose bind-mounts it as a secret.
+
+3. Download and start the published image:
+
+   ```sh
+   docker compose pull
+   docker compose up -d --no-build
+   docker compose ps
+   ```
+
+4. Open `http://localhost:3000` on the host, or `http://<server-address>:3000` from your trusted LAN. Sign in with your password, choose a model, then upload audio or connect Audiobookshelf in Settings. Put remote/public access behind HTTPS.
+
+The image is `ghcr.io/jcdesantis/audiobookforge:<version>` (image versions have **no leading `v`**). `/data` persists in a named Docker volume across container upgrades. Back it up before upgrading; do not remove the volume to update the app.
+
+For NVIDIA, use the same pinned image with the GPU override:
+
+```sh
+docker compose -f compose.yml -f compose.gpu.yml up -d --no-build
+```
+
+Check the release notes for NVIDIA qualification. When the optional hardware test is skipped, CUDA is included but unverified on real hardware for that release; CPU is the validated path. Select **Force CPU** in Settings to use it explicitly.
+
+To upgrade, back up `/data`, change `ABF_VERSION` in `.env` to the next published version, and repeat `docker compose pull` and `docker compose up -d --no-build` (include the GPU override if used).
 
 See the [Docker deployment guide](docs/docker.md) for CPU/GPU Compose commands, NVIDIA requirements, HTTPS and Audiobookshelf networking, backups, upgrades, and troubleshooting.
 
@@ -174,10 +210,21 @@ Release behavior:
 
 - Pushes and pull requests run validation
 - An exact `v<package version>` tag builds Windows installer/portable assets and validates the universal Docker image
-- Stable publication requires CPU image validation, security scanning, and a real NVIDIA CUDA smoke test
+- Stable publication requires Windows and browser validation, CPU image startup and real transcription, and security scanning
+- Real NVIDIA qualification is optional; enable it only when a self-hosted `linux`, `x64`, `nvidia` runner is available. If enabled, it must pass before publication
 - Tag pushes validate only; stable publication requires an explicit approved workflow dispatch
-- The workflow publishes immutable version/SHA image tags, SBOM, provenance, licenses, and Windows assets together
+- The workflow promotes the exact tested Docker digest to version/SHA tags, retaining SBOM and provenance, and publishes Windows assets, Compose files, checksums, and license records
 - See the [release acceptance matrix](docs/release-acceptance.md) for required evidence and rollback rules
+
+### Maintainer release steps
+
+1. Merge the release workflow into the default branch (`master`) so **Actions → Coordinated Release → Run workflow** is available. Confirm Actions can write repository contents and packages. The built-in `GITHUB_TOKEN` is used; no Docker Hub account is required.
+2. Complete the acceptance checklist, update `package.json` and `package-lock.json` to a new unused version, and commit the release candidate. Create and push its exact `v<version>` tag. Never move an existing release tag.
+3. The tag run builds Windows downloads and a Docker candidate, runs the required checks, and leaves stable releases unpublished. Review the run and its Windows/security artifacts.
+4. Run **Coordinated Release** manually with that tag and **publish_stable** enabled. Leave **validate_nvidia** disabled when no GPU runner is available; release notes record that GPU qualification was skipped. Enabling it makes that extra check mandatory.
+5. Verify both Windows downloads and the versioned image are available. On the first GHCR publication, set the package visibility to **Public** in its GitHub package settings so users can pull without signing in.
+
+Validation runs push temporary `candidate-<run>-<attempt>` images; users should install published version tags. GitHub Releases and GHCR cannot be updated atomically: the workflow stages Windows assets in a draft, promotes the tested versioned image, publishes the release, and finally updates `latest`. If the final channel update fails, rerun that failed job; the versioned release remains usable.
 
 ## Credits
 

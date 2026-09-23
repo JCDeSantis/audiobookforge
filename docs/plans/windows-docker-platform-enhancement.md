@@ -4,7 +4,7 @@
 
 Evolve Audiobook Forge into one product with Windows Electron and authenticated Docker web runtimes. Both runtimes share queue, transcription, Audiobookshelf, subtitle, persistence, artifact, and cleanup services. A single `linux/amd64` Docker image contains independent CPU and CUDA Whisper executables, selects CUDA automatically, and falls back safely to CPU.
 
-Development occurs on `codex/docker-web-platform`. The application version remains unchanged until release-candidate validation. Stable Windows and Docker artifacts publish together only after all required validation passes.
+Development occurs on `codex/docker-web-platform`. Version 1.2.0 is prepared for the coordinated Windows/Docker release; create its immutable tag after candidate acceptance. Stable artifacts publish only after all required validation passes.
 
 ## Delivery order
 
@@ -22,7 +22,7 @@ Development occurs on `codex/docker-web-platform`. The application version remai
 12. Complete Docker upload, download, storage, compute, and cleanup UI behavior.
 13. Build one universal CPU/CUDA Docker image with base and optional GPU Compose configurations.
 14. Harden restart recovery, disk exhaustion, security, streaming, and diagnostics.
-15. Coordinate Windows and Docker release automation so stable releases cannot publish partially.
+15. Coordinate Windows and Docker release automation with staged assets and explicit recovery for cross-service publication failures.
 16. Complete deployment documentation, hardware acceptance, and release-candidate preparation.
 
 Every milestone must leave Windows tests, typechecks, and the production build passing. Commits remain independently revertible and are never force-pushed.
@@ -33,7 +33,9 @@ Completed foundations include the branch/baseline, dependency boundaries, atomic
 
 The current local gate is 37 unit/integration files with 144 tests plus two Chromium end-to-end flows, Node/web/server typechecks, lint, web/server production builds, and the Windows production build. GitHub Actions validates Linux server isolation, the browser suite, and universal-image startup on a CPU-only host. NVIDIA hardware qualification remains unavailable on the current workstation.
 
-Deployment, recovery, networking, security, and release-acceptance documentation is complete. Remaining release-candidate gates are a full packaged Windows/Docker acceptance pass, a real NVIDIA transcription smoke test, review of vulnerability/SBOM/provenance evidence, and the post-acceptance version bump with its matching immutable tag. Stable publication remains blocked until those gates pass.
+Deployment, recovery, networking, security, and release-acceptance documentation is complete. Remaining release-candidate gates are a full packaged Windows/Docker acceptance pass, review of vulnerability/SBOM/provenance evidence, and the post-acceptance version bump with its matching immutable tag.
+
+Release workflow update (2026-09-23): no NVIDIA runner is currently available. Hardware qualification is now opt-in through `validate_nvidia`; if selected it must pass, otherwise release notes explicitly identify CPU-only qualification. The candidate image is built once with attestations, tested and scanned by digest, then promoted without rebuilding. The main README includes both installation paths; release downloads include Compose files and a pinned environment file.
 
 ## Architecture
 
@@ -94,6 +96,6 @@ Deployment, recovery, networking, security, and release-acceptance documentation
 
 ## Release and validation
 
-- A single tag workflow validates the tag/version, runs all tests, builds Windows assets and the Docker image, performs CPU and required NVIDIA smoke validation, generates SBOM/provenance/licenses/scans, pushes immutable image tags, and only then publishes the GitHub release and `latest`.
+- A single workflow validates the tag/version, runs all tests, builds Windows assets and the Docker image, performs CPU and optional NVIDIA smoke validation, generates SBOM/provenance/licenses/scans, promotes the tested image digest to versioned tags, and only then publishes the GitHub release and `latest`. Tag pushes validate; explicit dispatch enables publication.
 - Test shared core and both client transports, v1.1 migration/recovery, Windows local/ABS behavior, CPU/CUDA/fallback behavior, Docker CPU and NVIDIA operation, remote ABS/EPUB behavior, upload interruption and corruption, cleanup races, abrupt termination, ENOSPC, authentication, streaming, and browser flows.
 - Initial Docker scope is `linux/amd64`, one image, one user, one worker, browser uploads, and no mounted-folder browser. ARM/Jetson, ROCm, Intel acceleration, and multi-user support are future work.

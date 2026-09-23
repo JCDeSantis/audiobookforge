@@ -15,7 +15,7 @@ RUN git init /src/whisper.cpp \
     && git -C /src/whisper.cpp checkout --detach FETCH_HEAD \
     && test "$(git -C /src/whisper.cpp rev-parse HEAD)" = "${WHISPER_COMMIT}" \
     && cmake -S /src/whisper.cpp -B /src/whisper.cpp/build \
-      -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_CUDA=OFF \
+      -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_CUDA=OFF \
     && cmake --build /src/whisper.cpp/build --config Release --target whisper-cli -j"$(nproc)" \
     && install -Dm755 /src/whisper.cpp/build/bin/whisper-cli /artifacts/cpu/whisper-cli
 
@@ -31,7 +31,7 @@ RUN git init /src/whisper.cpp \
     && git -C /src/whisper.cpp checkout --detach FETCH_HEAD \
     && test "$(git -C /src/whisper.cpp rev-parse HEAD)" = "${WHISPER_COMMIT}" \
     && cmake -S /src/whisper.cpp -B /src/whisper.cpp/build \
-      -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_CUDA=ON \
+      -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_CUDA=ON \
     && cmake --build /src/whisper.cpp/build --config Release --target whisper-cli -j"$(nproc)" \
     && install -Dm755 /src/whisper.cpp/build/bin/whisper-cli /artifacts/cuda/whisper-cli
 

@@ -1,0 +1,5 @@
+services:
+  audiobookforge:
+    image: audiobookforge:dev
+    build:
+      context: .

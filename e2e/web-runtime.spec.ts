@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
-import type { TranscriptionJob } from '../src/shared/types'
+import type { AbsBook, TranscriptionJob } from '../src/shared/types'
 
 const settings = {
   absUrl: '',
@@ -147,6 +147,82 @@ async function login(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Sign in' }).click()
   await expect(page.getByRole('heading', { name: 'Audiobook Forge' })).toBeVisible()
 }
+
+test('keeps ABS cards aligned and full names available when text is shortened', async ({
+  page
+}) => {
+  await mockApi(page)
+  const longTitle =
+    'A Very Long Book Title About the Forgotten Cities Beyond the Northern Sea and the Cartographers Who Rediscovered Them'
+  const longSeries =
+    'The Collected Adventures of the Royal Cartographers of the Seven Forgotten Kingdoms'
+  const books: AbsBook[] = ['A Short Title', longTitle, 'Standalone'].map((title, index) => ({
+    id: `book-${index}`,
+    title,
+    libraryId: 'library',
+    folderId: 'folder',
+    relPath: '',
+    isFile: false,
+    authorName: 'Example Author',
+    duration: 52320,
+    cover: null,
+    hasSubtitles: false,
+    ebookPath: null,
+    audioFiles: [],
+    series: index === 2 ? [] : [{ name: longSeries, sequence: index === 0 ? null : '12.5' }]
+  }))
+  await page.route('**/api/v1/settings', (route) =>
+    route.fulfill({ json: { ...settings, absUrl: 'https://abs.example.com' } })
+  )
+  await page.route('**/api/v1/abs/libraries', (route) =>
+    route.fulfill({ json: [{ id: 'library', name: 'Books', mediaType: 'book' }] })
+  )
+  await page.route('**/api/v1/abs/libraries/library/books', (route) =>
+    route.fulfill({ json: books })
+  )
+  await login(page)
+  await page.getByRole('button', { name: /Browse AudioBookShelf/ }).click()
+  const dialog = page.getByRole('dialog', { name: 'AudioBookShelf Library' })
+  const cards = dialog.getByRole('button').filter({ has: page.getByRole('heading', { level: 3 }) })
+  await expect(cards).toHaveCount(3)
+  await expect(dialog.getByRole('heading', { name: longTitle })).toHaveAttribute('title', longTitle)
+  await expect(dialog.getByText(longSeries).first()).toHaveAttribute('title', longSeries)
+  await expect(dialog.getByText('Book 12.5', { exact: true })).toBeVisible()
+
+  for (const width of [1280, 900, 390]) {
+    await page.setViewportSize({ width, height: 900 })
+    const dimensions = await cards.evaluateAll((elements) =>
+      elements.map((card) => {
+        const bounds = card.getBoundingClientRect()
+        const title = card.querySelector('h3')!
+        const author = title.nextElementSibling!
+        const footer = card.lastElementChild!
+        const seriesRow = footer.previousElementSibling!
+        const number = seriesRow.children[1] as HTMLElement | undefined
+        return {
+          height: bounds.height,
+          titleY: title.getBoundingClientRect().top - bounds.top,
+          authorY: author.getBoundingClientRect().top - bounds.top,
+          seriesY: seriesRow.getBoundingClientRect().top - bounds.top,
+          footerY: footer.getBoundingClientRect().top - bounds.top,
+          numberFits:
+            !number ||
+            (number.scrollWidth <= number.clientWidth &&
+              number.getBoundingClientRect().right < bounds.right)
+        }
+      })
+    )
+    for (const dimension of dimensions) {
+      expect(dimension).toEqual(dimensions[0])
+      expect(dimension.numberFits).toBe(true)
+    }
+    const clippedSeries = await dialog
+      .getByText(longSeries)
+      .last()
+      .evaluate((element) => element.scrollWidth > element.clientWidth)
+    expect(clippedSeries).toBe(true)
+  }
+})
 
 test('logs in, uploads an audiobook, and queues it', async ({ page }) => {
   const requests = await mockApi(page)

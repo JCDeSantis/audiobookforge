@@ -152,6 +152,11 @@ export interface AbsAudioFile {
   updatedAt: number
 }
 
+export interface AbsBookSeries {
+  name: string
+  sequence: string | null
+}
+
 export interface AbsBook {
   id: string
   libraryId: string
@@ -160,6 +165,7 @@ export interface AbsBook {
   isFile: boolean
   title: string
   authorName: string
+  series?: AbsBookSeries[]
   duration: number // seconds
   cover: string | null // cover URL relative to ABS server
   hasSubtitles: boolean
@@ -176,6 +182,7 @@ export interface AbsBookSummary {
   isFile: boolean
   title: string
   authorName: string
+  series?: AbsBookSeries[]
   duration: number
   cover: string | null
   hasSubtitles: boolean
