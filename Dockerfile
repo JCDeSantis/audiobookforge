@@ -46,7 +46,9 @@ FROM nvidia/cuda:12.4.1-runtime-ubuntu22.04 AS runtime
 LABEL org.opencontainers.image.source="https://github.com/JCDeSantis/audiobookforge"
 LABEL org.opencontainers.image.description="Audiobook Forge single-user CPU/CUDA web runtime"
 
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     ca-certificates curl dumb-init ffmpeg \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 audiobookforge \
@@ -55,8 +57,9 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
     && chown -R audiobookforge:audiobookforge /app /data
 
 # The Bullseye Node build is compatible with the Ubuntu 22.04 runtime glibc and avoids
-# adding a package repository to the final image.
-COPY --from=application-build /usr/local/ /usr/local/
+# adding a package repository to the final image. The server is bundled: npm,
+# Corepack, headers, and other build-time tools are not required at runtime.
+COPY --from=application-build /usr/local/bin/node /usr/local/bin/node
 COPY --from=application-build --chown=audiobookforge:audiobookforge /build/dist/server /app/server
 COPY --from=application-build --chown=audiobookforge:audiobookforge /build/out/renderer /app/out/renderer
 COPY --from=whisper-cpu /artifacts/cpu/whisper-cli /opt/audiobookforge/whisper/cpu/whisper-cli
