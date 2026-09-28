@@ -19,6 +19,8 @@ function phaseLabel(phase: string | undefined): string {
       return 'Transcribing'
     case 'uploading':
       return 'Uploading subtitles'
+    case 'verifying':
+      return 'Verifying subtitles in Audiobookshelf'
     case 'done':
       return 'Done'
     case 'error':
@@ -104,6 +106,9 @@ function JobCard({
 }): React.JSX.Element {
   const { queue } = useAppStore()
   const [retryModel, setRetryModel] = useState(job.model)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const isActive = job.id === queue.activeJobId
   const savedPaths = getSavedPaths(job)
   const modelName = getWhisperModelBaseName(job.model)
@@ -153,9 +158,32 @@ function JobCard({
     void getAppClient().files.downloadJobResults(job.id)
   }
 
+  const handleDeleteResults = async (): Promise<void> => {
+    const remove = getAppClient().files.deleteJobResults
+    if (!remove) return
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await remove(job.id)
+      setConfirmDelete(false)
+      const store = useAppStore.getState()
+      store.setJobs(
+        store.queue.jobs.map((entry) =>
+          entry.id === job.id
+            ? { ...entry, resultArtifactIds: [], resultFilesDeleted: true }
+            : entry
+        )
+      )
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Could not delete result files.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <article
-      className={`overflow-hidden rounded-lg border px-3.5 py-3 ${quiet ? 'min-h-[9.5rem]' : 'h-[11.75rem]'} ${
+      className={`rounded-lg border px-3.5 py-3 ${quiet ? 'min-h-[9.5rem]' : 'h-[11.75rem] overflow-hidden'} ${
         isActive
           ? 'border-[#8f2b2b] bg-[#170909]'
           : quiet
@@ -178,7 +206,12 @@ function JobCard({
         className="mt-1 h-4 overflow-hidden text-ellipsis whitespace-nowrap text-[11px] leading-4 text-[#bb9191]"
         title={`${job.source === 'abs' ? 'AudioBookShelf' : job.source === 'upload' ? 'Browser upload' : 'Local files'} - ${modelName}`}
       >
-        {job.source === 'abs' ? 'AudioBookShelf' : job.source === 'upload' ? 'Browser upload' : 'Local files'} - {modelName}
+        {job.source === 'abs'
+          ? 'AudioBookShelf'
+          : job.source === 'upload'
+            ? 'Browser upload'
+            : 'Local files'}{' '}
+        - {modelName}
       </div>
 
       {!quiet && (
@@ -262,24 +295,74 @@ function JobCard({
       {job.status === 'done' &&
         savedPaths.length === 0 &&
         job.source === 'abs' &&
-        !job.resultArtifactIds?.length && (
-        <div className="mt-3 text-xs text-[#97d8ad]">Uploaded to AudioBookShelf</div>
-      )}
+        !job.deliveryWarning && (
+          <div className="mt-3 text-xs text-[#97d8ad]">Uploaded to AudioBookShelf</div>
+        )}
 
       {job.status === 'done' && job.source === 'abs' && job.deliveryWarning && (
-        <div className="mt-2 truncate text-xs text-[#f6c76a]" title={job.deliveryWarning}>
-          ABS upload fallback — download results below
+        <div className="mt-2 text-xs text-[#f6c76a]" role="status">
+          <div>Transcription complete — Audiobookshelf delivery needs attention</div>
+          <div className="mt-1 break-words">{job.deliveryWarning}</div>
         </div>
       )}
 
-      <div className={`${quiet ? 'mt-3' : 'mt-2'} flex h-8 items-center gap-2 text-xs`}>
+      {job.resultFilesDeleted && (
+        <p className="mt-2 text-xs text-[#bb9191]">Result files deleted from Forge.</p>
+      )}
+      {confirmDelete && (
+        <div
+          className="mt-3 rounded-md border border-[#5b1f1f] p-3 text-xs"
+          role="group"
+          aria-label="Delete result files confirmation"
+        >
+          <p>
+            Delete this job’s result files from Forge? Download and save a copy first. This cannot
+            be undone. Files in Audiobookshelf and copies you already downloaded are unchanged.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-3">
+            <button
+              className="text-[#ff9b9b]"
+              disabled={deleting}
+              onClick={() => void handleDeleteResults()}
+            >
+              {deleting ? 'Deleting…' : 'Confirm delete'}
+            </button>
+            <button
+              disabled={deleting}
+              onClick={() => {
+                setConfirmDelete(false)
+                setDeleteError(null)
+              }}
+            >
+              Keep files
+            </button>
+          </div>
+        </div>
+      )}
+      {deleteError && (
+        <p role="alert" className="mt-2 text-xs text-[#ff9b9b]">
+          {deleteError}
+        </p>
+      )}
+      <div className={`${quiet ? 'mt-3' : 'mt-2'} flex min-h-8 items-center gap-2 text-xs`}>
         {!quiet && (
           <div className="min-w-[4.75rem] flex-none tabular-nums text-[#9d7272]">
             {elapsedText ? `Elapsed ${elapsedText}` : '\u00A0'}
           </div>
         )}
 
-        <div className="ml-auto flex min-w-0 flex-nowrap justify-end gap-1.5">
+        <div className="ml-auto flex min-w-0 flex-wrap justify-end gap-1.5">
+          {job.status === 'done' &&
+            !!job.resultArtifactIds?.length &&
+            getAppClient().files.deleteJobResults && (
+              <button
+                className="rounded-md border border-[#5b1f1f] px-2.5 py-1.5 text-[#ffb4b4]"
+                disabled={deleting || confirmDelete}
+                onClick={() => setConfirmDelete(true)}
+              >
+                Delete result files
+              </button>
+            )}
           {job.status === 'done' &&
             (job.source === 'upload' || job.source === 'abs') &&
             job.resultArtifactIds &&

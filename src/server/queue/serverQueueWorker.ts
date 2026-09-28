@@ -25,7 +25,8 @@ interface AbsJobAdapterLike {
   complete?(
     job: TranscriptionJob,
     result: ServerTranscriptionResult,
-    signal: AbortSignal
+    signal: AbortSignal,
+    onVerifying?: () => void
   ): Promise<void>
   cleanup?(job: TranscriptionJob): void
 }
@@ -89,15 +90,35 @@ export class ServerQueueWorker {
           inputs.audioPaths,
           job.model,
           job.subtitleFormats ?? ['srt'],
-          (progress) => this.queue.updateProgress(job.id, progress),
+          (progress) => {
+            if (progress.phase === 'done') return
+            const overallPercent =
+              progress.phase === 'transcribing'
+                ? Math.round(
+                    (progress.overallPercent ?? progress.percent) *
+                      (job.source === 'abs' ? 0.9 : 0.99)
+                  )
+                : undefined
+            this.queue.updateProgress(job.id, { ...progress, overallPercent })
+          },
           controller.signal,
           inputs.epubPath
         )
         let deliveryWarning: string | null = null
         if (job.source === 'abs' && this.absJobs?.complete) {
           try {
-            this.queue.updateProgress(job.id, { phase: 'uploading', percent: 0 })
-            await this.absJobs.complete(job, result, controller.signal)
+            this.queue.updateProgress(job.id, {
+              phase: 'uploading',
+              percent: 0,
+              overallPercent: 90
+            })
+            await this.absJobs.complete(job, result, controller.signal, () => {
+              this.queue.updateProgress(job.id, {
+                phase: 'verifying',
+                percent: 0,
+                overallPercent: 99
+              })
+            })
           } catch (error) {
             deliveryWarning = error instanceof Error ? error.message : 'ABS subtitle upload failed.'
           }
@@ -119,7 +140,9 @@ export class ServerQueueWorker {
         const finished = this.queue.get(job.id)
         if (
           finished.uploadSessionId &&
-          (finished.status === 'done' || finished.status === 'failed' || finished.status === 'cancelled')
+          (finished.status === 'done' ||
+            finished.status === 'failed' ||
+            finished.status === 'cancelled')
         ) {
           this.uploads.releaseFromJob(finished.uploadSessionId, finished.id)
         }

@@ -10,11 +10,15 @@ let server: Server | null = null
 let baseUrl = ''
 let root = ''
 let subtitleUploads = 0
+let indexedFiles: string[] = []
+let indexUploads = true
 
 describe('server ABS client', () => {
   beforeEach(async () => {
     root = mkdtempSync(join(tmpdir(), 'abf-abs-download-'))
     subtitleUploads = 0
+    indexedFiles = ['existing.srt']
+    indexUploads = true
     server = createServer((request, response) => {
       response.setHeader('Content-Type', 'application/json')
       if (request.url === '/abs/login') {
@@ -32,7 +36,9 @@ describe('server ABS client', () => {
         return
       }
       if (request.url === '/abs/api/libraries') {
-        response.end(JSON.stringify({ libraries: [{ id: 'lib-1', name: 'Books', mediaType: 'book' }] }))
+        response.end(
+          JSON.stringify({ libraries: [{ id: 'lib-1', name: 'Books', mediaType: 'book' }] })
+        )
         return
       }
       if (request.url === '/abs/api/libraries/lib-1/items?limit=500&page=0') {
@@ -56,13 +62,19 @@ describe('server ABS client', () => {
             libraryId: 'lib-1',
             folderId: 'folder-1',
             relPath: 'The Author/The Book',
+            libraryFiles: indexedFiles.map((filename) => ({ metadata: { filename } })),
             media: {
               metadata: { title: 'The Book', authorName: 'The Author' },
               audioFiles: [
                 {
                   index: 0,
                   ino: 'audio-ino',
-                  metadata: { filename: 'book.m4b', ext: '.m4b', path: 'book.m4b', relPath: 'book.m4b' },
+                  metadata: {
+                    filename: 'book.m4b',
+                    ext: '.m4b',
+                    path: 'book.m4b',
+                    relPath: 'book.m4b'
+                  },
                   duration: 10,
                   mimeType: 'audio/mp4',
                   addedAt: 1,
@@ -90,6 +102,7 @@ describe('server ABS client', () => {
         return
       }
       if (request.url === '/abs/api/items/book-1/scan' && request.method === 'POST') {
+        if (indexUploads) indexedFiles.push('book.srt', 'book.vtt')
         request.resume()
         response.end('{}')
         return
@@ -124,7 +137,7 @@ describe('server ABS client', () => {
       { id: 'lib-1', name: 'Books', mediaType: 'book' }
     ])
     await expect(client.books(login.session, 'lib-1')).resolves.toMatchObject([
-      { id: 'book-1', title: 'The Book', authorName: 'The Author' }
+      { id: 'book-1', title: 'The Book', authorName: 'The Author', hasSubtitles: true }
     ])
   })
 
@@ -154,13 +167,20 @@ describe('server ABS client', () => {
     writeFileSync(srt, '1\n00:00:00,000 --> 00:00:01,000\nHello\n')
     writeFileSync(vtt, 'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nHello\n')
 
-    await client.uploadSubtitleResults(
-      session,
-      book,
-      [srt, vtt],
-      new AbortController().signal
-    )
+    await client.uploadSubtitleResults(session, book, [srt, vtt], new AbortController().signal)
 
     expect(subtitleUploads).toBe(2)
+  })
+
+  it('does not report delivery when ABS accepts files but they are absent from the intended book', async () => {
+    indexUploads = false
+    const client = new ServerAbsClient()
+    const { session } = await client.login(baseUrl, 'jacob', 'secret')
+    const book = await client.book(session, 'book-1')
+    const path = join(root, 'result.srt')
+    writeFileSync(path, '1\n00:00:00,000 --> 00:00:01,000\nHello\n')
+    await expect(
+      client.uploadSubtitleResults(session, book, [path], new AbortController().signal)
+    ).rejects.toThrow('could not be verified on this book')
   })
 })

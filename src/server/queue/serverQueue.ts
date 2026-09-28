@@ -223,6 +223,14 @@ export class ServerQueue {
     })
   }
 
+  removeResultArtifacts(jobId: string, ids: string[]): void {
+    const job = this.requireJob(jobId)
+    if (job.status !== 'done') throw new Error('Only completed job results can be deleted.')
+    job.resultArtifactIds = (job.resultArtifactIds ?? []).filter((id) => !ids.includes(id))
+    if (!job.resultArtifactIds.length) job.resultFilesDeleted = true
+    this.commit()
+  }
+
   clearFinished(): TranscriptionJob[] {
     const removed = this.jobs.filter(
       (job) => job.status === 'done' || job.status === 'failed' || job.status === 'cancelled'

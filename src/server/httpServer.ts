@@ -16,6 +16,7 @@ import type { ServerRuntimeConfig } from './runtimeConfig'
 import { ArtifactStore } from '../core/artifacts/artifactStore'
 import { RetentionService } from '../core/artifacts/retentionService'
 import { UPLOAD_CHUNK_BYTES, UploadStore } from './uploads/uploadStore'
+import { deleteJobResults } from './queue/deleteJobResults'
 import type { CreateUploadFile } from './uploads/types'
 import { ServerQueue, type ServerQueueInput } from './queue/serverQueue'
 import { ServerQueueWorker } from './queue/serverQueueWorker'
@@ -615,6 +616,16 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
           worker.kick()
           return
         }
+        response.statusCode = 204
+        response.end()
+        return
+      }
+
+      const resultDeleteMatch = pathname.match(/^\/api\/v1\/jobs\/([a-f0-9-]+)\/results$/i)
+      if (method === 'DELETE' && resultDeleteMatch) {
+        requireSameOrigin(request, config)
+        requireCsrf(request, context!.session)
+        deleteJobResults(queue, artifacts, resultDeleteMatch[1])
         response.statusCode = 204
         response.end()
         return

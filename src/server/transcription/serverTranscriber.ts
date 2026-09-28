@@ -183,6 +183,7 @@ export class ServerTranscriber {
         if (segmentCount === 1) {
           // The full prepared WAV is already in the correct Whisper format.
         } else {
+          onProgress({ phase: 'segmenting', percent: 0, segmentIndex, segmentCount })
           const extracted = await this.run(
             this.config.ffmpegPath,
             [

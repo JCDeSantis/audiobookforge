@@ -36,7 +36,8 @@ export class ServerAbsJobAdapter {
   async complete(
     job: TranscriptionJob,
     result: ServerTranscriptionResult,
-    signal: AbortSignal
+    signal: AbortSignal,
+    onVerifying: () => void = () => undefined
   ): Promise<void> {
     if (!job.absItemId) throw new Error('The ABS queue item is missing its item ID.')
     const session = this.sessions.load()
@@ -44,10 +45,11 @@ export class ServerAbsJobAdapter {
     const book = await this.client.book(session, job.absItemId)
     const paths = result.resultArtifactIds.map((id) => {
       const artifact = this.artifacts.get(id)
-      if (!artifact || artifact.category !== 'result') throw new Error('A subtitle result is unavailable.')
+      if (!artifact || artifact.category !== 'result')
+        throw new Error('A subtitle result is unavailable.')
       return artifact.path
     })
-    await this.client.uploadSubtitleResults(session, book, paths, signal)
+    await this.client.uploadSubtitleResults(session, book, paths, signal, onVerifying)
   }
 
   cleanup(job: TranscriptionJob): void {

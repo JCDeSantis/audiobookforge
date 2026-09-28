@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TranscriptionJob } from '../../../../shared/types'
 import { QueuePanel } from '../QueuePanel'
@@ -33,6 +33,60 @@ function createJob(overrides: Partial<TranscriptionJob> = {}): TranscriptionJob 
 }
 
 describe('QueuePanel', () => {
+  it('requires confirmation before deleting downloads and retains job history', async () => {
+    const remove = vi.fn(async () => undefined)
+    window.electron.files.deleteJobResults = remove
+    try {
+      useAppStore.getState().setJobs([
+        createJob({
+          source: 'abs',
+          status: 'done',
+          completedAt: Date.now(),
+          resultArtifactIds: ['result'],
+          deliveryWarning: 'Upload failed'
+        })
+      ])
+      render(<QueuePanel />)
+      fireEvent.click(screen.getByRole('button', { name: 'Finished (1)' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Delete result files' }))
+      expect(remove).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'Keep files' }))
+      expect(remove).not.toHaveBeenCalled()
+      fireEvent.click(screen.getByRole('button', { name: 'Delete result files' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Confirm delete' }))
+      await waitFor(() =>
+        expect(screen.getByText('Result files deleted from Forge.')).toBeInTheDocument()
+      )
+      expect(remove).toHaveBeenCalledWith('job-1')
+      expect(screen.queryByRole('button', { name: 'Download' })).not.toBeInTheDocument()
+      expect(screen.getByText('Red Rising')).toBeInTheDocument()
+    } finally {
+      delete window.electron.files.deleteJobResults
+    }
+  })
+  it.each([null, 'Upload rejected (403).'])(
+    'shows the ABS delivery outcome alongside downloadable results (%s)',
+    (warning) => {
+      useAppStore.getState().setJobs([
+        createJob({
+          source: 'abs',
+          status: 'done',
+          completedAt: Date.now(),
+          resultArtifactIds: ['subtitle'],
+          deliveryWarning: warning
+        })
+      ])
+      render(<QueuePanel />)
+      fireEvent.click(screen.getByRole('button', { name: 'Finished (1)' }))
+      expect(screen.getByRole('button', { name: 'Download' })).toBeInTheDocument()
+      if (warning) {
+        expect(screen.getByText(warning)).toBeInTheDocument()
+        expect(screen.queryByText('Uploaded to AudioBookShelf')).not.toBeInTheDocument()
+      } else {
+        expect(screen.getByText('Uploaded to AudioBookShelf')).toBeInTheDocument()
+      }
+    }
+  )
   afterEach(() => {
     vi.useRealTimers()
   })

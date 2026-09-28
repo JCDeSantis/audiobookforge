@@ -25,7 +25,7 @@ Stable publication requires the mandatory rows below to pass from the exact immu
 6. Review vulnerability, SBOM, provenance, and third-party license output.
 7. Bump `package.json` and `package-lock.json` only after acceptance passes, commit the candidate, and push the matching immutable `v<version>` tag. Tag pushes validate but never publish stable artifacts automatically.
 8. If another candidate run is needed, dispatch the coordinated workflow for that existing tag with stable publishing disabled.
-9. Review all validation evidence, then manually dispatch the same immutable tag with `publish_stable=true`. Keep `validate_nvidia=false` without a GPU runner. If selected, GPU validation becomes mandatory for that run. Never reuse a published tag or overwrite a versioned image.
+9. Review all validation evidence, then dispatch **Publish Validated Release** with the same immutable tag and successful validation run ID. Reuse its Windows artifacts and exact tested Docker digest without rebuilding. Never reuse a published tag or overwrite a versioned image.
 10. Confirm the GHCR package is public for anonymous downloads, Windows downloads are present, and Compose can pull the published version. The `update-latest` job runs only after the public release exists; rerun that failed job if updating the convenience tag fails.
 
 ## Release artifacts and retries
