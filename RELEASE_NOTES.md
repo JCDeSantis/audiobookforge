@@ -1,3 +1,13 @@
+# Audiobook Forge v1.2.3
+
+- Refresh expired Audiobookshelf access tokens in the Docker runtime and retry rejected requests once, including subtitle uploads after long transcriptions.
+- Persist rotated tokens in encrypted session storage and share refresh requests across concurrent operations.
+- Show a sign-in message when renewal fails while retaining generated results for download.
+
+Regression tests simulate expired tokens, token rotation, concurrent requests, and rejected authentication. Real-server acceptance of this fix remains pending.
+
+---
+
 # Audiobook Forge v1.2.2
 
 - Detect existing Audiobookshelf subtitles using each book’s detailed file list.
