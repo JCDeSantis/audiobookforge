@@ -79,6 +79,7 @@ export type WhisperProgressPhase =
   | 'segmenting'
   | 'transcribing'
   | 'uploading'
+  | 'verifying'
   | 'done'
   | 'error'
 
@@ -125,6 +126,7 @@ export interface TranscriptionJob {
   computeBackend?: ComputeBackend
   computeFallbackReason?: string | null
   deliveryWarning?: string | null
+  resultFilesDeleted?: boolean
 }
 
 export interface WebUploadSelection {

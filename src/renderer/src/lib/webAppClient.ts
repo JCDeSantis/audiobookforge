@@ -109,6 +109,8 @@ export class WebAppClient implements AppClient {
   }
 
   files = {
+    deleteJobResults: (jobId: string) =>
+      this.request<void>(`/api/v1/jobs/${encodeURIComponent(jobId)}/results`, { method: 'DELETE' }),
     pickAudio: async (): Promise<null> => null,
     pickEpub: async (): Promise<null> => null,
     pickOutputFolder: async (): Promise<null> => null,
@@ -146,9 +148,13 @@ export class WebAppClient implements AppClient {
       const identity = selectedFileIdentity(files)
       let session: RemoteSession | null = null
       try {
-        const pending = JSON.parse(localStorage.getItem(PENDING_UPLOAD_KEY) ?? 'null') as PendingUpload | null
+        const pending = JSON.parse(
+          localStorage.getItem(PENDING_UPLOAD_KEY) ?? 'null'
+        ) as PendingUpload | null
         if (pending && matchingIdentity(pending.files, identity)) {
-          const candidate = await this.request<RemoteSession>(`/api/v1/uploads/${pending.sessionId}`)
+          const candidate = await this.request<RemoteSession>(
+            `/api/v1/uploads/${pending.sessionId}`
+          )
           if (candidate.state === 'open') session = candidate
         }
       } catch {
@@ -170,10 +176,7 @@ export class WebAppClient implements AppClient {
       for (const [fileIndex, localFile] of files.entries()) {
         const remoteFile = session.files[fileIndex]
         if (!remoteFile) throw new Error(`Upload session did not accept ${localFile.name}.`)
-        if (
-          remoteFile.name !== localFile.name ||
-          remoteFile.sizeBytes !== localFile.size
-        ) {
+        if (remoteFile.name !== localFile.name || remoteFile.sizeBytes !== localFile.size) {
           throw new Error('Reselected files do not match the pending upload session.')
         }
         if (remoteFile.state === 'finalized') {
@@ -181,10 +184,10 @@ export class WebAppClient implements AppClient {
           onProgress(Math.min(99, Math.round((uploadedBytes / totalBytes) * 100)))
           continue
         }
-        const offsetResponse = await fetch(
-          `/api/v1/uploads/${session.id}/files/${remoteFile.id}`,
-          { method: 'HEAD', credentials: 'same-origin' }
-        )
+        const offsetResponse = await fetch(`/api/v1/uploads/${session.id}/files/${remoteFile.id}`, {
+          method: 'HEAD',
+          credentials: 'same-origin'
+        })
         if (!offsetResponse.ok) throw new Error('Could not inspect the pending upload offset.')
         let offset = Number(offsetResponse.headers.get('Upload-Offset'))
         if (!Number.isSafeInteger(offset) || offset < 0 || offset > localFile.size) {
@@ -198,20 +201,17 @@ export class WebAppClient implements AppClient {
           const checksum = Array.from(new Uint8Array(checksumBytes), (byte) =>
             byte.toString(16).padStart(2, '0')
           ).join('')
-          const response = await fetch(
-            `/api/v1/uploads/${session.id}/files/${remoteFile.id}`,
-            {
-              method: 'PUT',
-              credentials: 'same-origin',
-              headers: {
-                'Content-Type': 'application/octet-stream',
-                'Upload-Offset': String(offset),
-                'X-Chunk-SHA256': checksum,
-                'X-ABF-CSRF': this.csrfToken ?? ''
-              },
-              body: bytes
-            }
-          )
+          const response = await fetch(`/api/v1/uploads/${session.id}/files/${remoteFile.id}`, {
+            method: 'PUT',
+            credentials: 'same-origin',
+            headers: {
+              'Content-Type': 'application/octet-stream',
+              'Upload-Offset': String(offset),
+              'X-Chunk-SHA256': checksum,
+              'X-ABF-CSRF': this.csrfToken ?? ''
+            },
+            body: bytes
+          })
           if (!response.ok) {
             const body = (await response.json().catch(() => ({}))) as { error?: string }
             throw new Error(body.error ?? `Upload failed (${response.status}).`)
@@ -256,8 +256,7 @@ export class WebAppClient implements AppClient {
       }),
     cancel: (jobId: string) =>
       this.request<void>(`/api/v1/jobs/${jobId}/cancel`, { method: 'POST' }),
-    pause: (jobId: string) =>
-      this.request<void>(`/api/v1/jobs/${jobId}/pause`, { method: 'POST' }),
+    pause: (jobId: string) => this.request<void>(`/api/v1/jobs/${jobId}/pause`, { method: 'POST' }),
     resume: (jobId: string) =>
       this.request<void>(`/api/v1/jobs/${jobId}/resume`, { method: 'POST' }),
     retry: (jobId: string, model?: WhisperModel) =>
@@ -286,7 +285,8 @@ export class WebAppClient implements AppClient {
         body: JSON.stringify({ url, username, password })
       }),
     logout: () => this.request<void>('/api/v1/abs/logout', { method: 'POST' }),
-    getLibraries: () => this.request<Awaited<ReturnType<AppClient['abs']['getLibraries']>>>('/api/v1/abs/libraries'),
+    getLibraries: () =>
+      this.request<Awaited<ReturnType<AppClient['abs']['getLibraries']>>>('/api/v1/abs/libraries'),
     getBooks: (libraryId: string) =>
       this.request<Awaited<ReturnType<AppClient['abs']['getBooks']>>>(
         `/api/v1/abs/libraries/${encodeURIComponent(libraryId)}/books`

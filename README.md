@@ -1,6 +1,6 @@
 # Audiobook Forge
 
-![Version](https://img.shields.io/badge/version-v1.2.1-d92a3d?style=for-the-badge)
+![Version](https://img.shields.io/badge/version-v1.2.2-d92a3d?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%2B%20Docker-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 ![License](https://img.shields.io/badge/license-MIT-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 
@@ -221,7 +221,7 @@ Release behavior:
 1. Merge the release workflow into the default branch (`master`) so **Actions → Coordinated Release → Run workflow** is available. Confirm Actions can write repository contents and packages. The built-in `GITHUB_TOKEN` is used; no Docker Hub account is required.
 2. Complete the acceptance checklist, update `package.json` and `package-lock.json` to a new unused version, and commit the release candidate. Create and push its exact `v<version>` tag. Never move an existing release tag.
 3. The tag run builds Windows downloads and a Docker candidate, runs the required checks, and leaves stable releases unpublished. Review the run and its Windows/security artifacts.
-4. Run **Coordinated Release** manually with that tag and **publish_stable** enabled. Leave **validate_nvidia** disabled when no GPU runner is available; release notes record that GPU qualification was skipped. Enabling it makes that extra check mandatory.
+4. Run **Publish Validated Release** with the immutable tag and the successful Coordinated Release run ID. It reuses that run’s Windows artifacts and tested Docker digest without rebuilding. NVIDIA qualification remains recorded as skipped when no GPU runner was used.
 5. Verify both Windows downloads and the versioned image are available. On the first GHCR publication, set the package visibility to **Public** in its GitHub package settings so users can pull without signing in.
 
 Validation runs push temporary `candidate-<run>-<attempt>` images; users should install published version tags. GitHub Releases and GHCR cannot be updated atomically: the workflow stages Windows assets in a draft, promotes the tested versioned image, publishes the release, and finally updates `latest`. If the final channel update fails, rerun that failed job; the versioned release remains usable.

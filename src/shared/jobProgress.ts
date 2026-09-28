@@ -1,15 +1,13 @@
 import type { WhisperProgressEvent, WhisperProgressPhase } from './types'
 
-const STAGE_WEIGHTS: Record<
-  Exclude<WhisperProgressPhase, 'done' | 'error'>,
-  number
-> = {
+const STAGE_WEIGHTS: Record<Exclude<WhisperProgressPhase, 'done' | 'error'>, number> = {
   'downloading-binary': 5,
   'downloading-model': 10,
   preparing: 10,
   segmenting: 5,
   transcribing: 65,
-  uploading: 5
+  uploading: 5,
+  verifying: 1
 }
 
 export interface JobProgressPlan {

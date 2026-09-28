@@ -1,4 +1,5 @@
 import { lookup } from 'dns/promises'
+import { setTimeout as delay } from 'timers/promises'
 import { request as httpRequest } from 'http'
 import { request as httpsRequest } from 'https'
 import type { LookupFunction } from 'net'
@@ -7,11 +8,7 @@ import { createWriteStream, mkdirSync, renameSync, rmSync } from 'fs'
 import { readFile } from 'fs/promises'
 import { basename, dirname, extname, join } from 'path'
 import type { AbsBook, AbsLibrary, AbsLoginResult } from '../../shared/types'
-import {
-  isBlockedNetworkHostname,
-  isPrivateHostname,
-  validateAbsUrl
-} from '../../shared/urlSafety'
+import { isBlockedNetworkHostname, isPrivateHostname, validateAbsUrl } from '../../shared/urlSafety'
 import { mapAbsItemToBook, type AbsApiItem, type AbsApiLibrary } from '../../core/abs/mapping'
 import type { ServerAbsSession } from './sessionStore'
 import {
@@ -20,10 +17,7 @@ import {
   splitSrtByDurations
 } from '../../shared/subtitleFormats'
 import type { SubtitleFormat } from '../../shared/types'
-import {
-  availableBytes,
-  DEFAULT_STORAGE_RESERVE_BYTES
-} from '../../core/storage/processingSpace'
+import { availableBytes, DEFAULT_STORAGE_RESERVE_BYTES } from '../../core/storage/processingSpace'
 
 interface LoginResponse {
   user?: {
@@ -56,10 +50,16 @@ async function pinnedAddress(url: URL): Promise<{ address: string; family: 4 | 6
 async function requestJson<T>(
   baseUrl: string,
   path: string,
-  options: { method?: string; token?: string; body?: unknown; headers?: Record<string, string> } = {}
+  options: {
+    method?: string
+    token?: string
+    body?: unknown
+    headers?: Record<string, string>
+  } = {}
 ): Promise<T> {
   const url = new URL(`${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`)
-  if (url.origin !== new URL(baseUrl).origin) throw new Error('ABS request origin changed unexpectedly.')
+  if (url.origin !== new URL(baseUrl).origin)
+    throw new Error('ABS request origin changed unexpectedly.')
   const hostname = url.hostname.replace(/^\[|\]$/g, '')
   const pinned = isIP(hostname)
     ? { address: hostname, family: isIP(hostname) as 4 | 6 }
@@ -126,7 +126,11 @@ export class ServerAbsClient {
     return validation.normalizedUrl
   }
 
-  async login(baseUrlInput: string, usernameInput: string, password: string): Promise<{
+  async login(
+    baseUrlInput: string,
+    usernameInput: string,
+    password: string
+  ): Promise<{
     session: ServerAbsSession
     result: AbsLoginResult
   }> {
@@ -180,7 +184,19 @@ export class ServerAbsClient {
       `/api/libraries/${encodeURIComponent(libraryId)}/items?limit=500&page=0`,
       { token: session.accessToken }
     )
-    return response.results.map((item) => mapAbsItemToBook(item, session.baseUrl))
+    const books: AbsBook[] = new Array(response.results.length)
+    let next = 0
+    await Promise.all(
+      Array.from({ length: Math.min(6, response.results.length) }, async () => {
+        while (next < response.results.length) {
+          const index = next++
+          // Library listings can omit libraryFiles. Fetch details rather than
+          // interpreting an absent file list as "no subtitles".
+          books[index] = await this.book(session, response.results[index].id)
+        }
+      })
+    )
+    return books
   }
 
   async book(session: ServerAbsSession, itemId: string): Promise<AbsBook> {
@@ -200,7 +216,8 @@ export class ServerAbsClient {
     signal: AbortSignal
   ): Promise<{ book: AbsBook; audioPaths: string[]; epubPath: string | null }> {
     const book = await this.book(session, itemId)
-    if (book.audioFiles.length === 0) throw new Error('The ABS item has no downloadable audio files.')
+    if (book.audioFiles.length === 0)
+      throw new Error('The ABS item has no downloadable audio files.')
     mkdirSync(targetDir, { recursive: true })
     const audioPaths: string[] = []
     for (const [index, audio] of book.audioFiles.entries()) {
@@ -216,7 +233,13 @@ export class ServerAbsClient {
     let epubPath: string | null = null
     if (book.ebookDownloadUrl) {
       epubPath = join(targetDir, 'context.epub')
-      await this.downloadFile(session, book.ebookDownloadUrl, epubPath, 2 * 1024 * 1024 * 1024, signal)
+      await this.downloadFile(
+        session,
+        book.ebookDownloadUrl,
+        epubPath,
+        2 * 1024 * 1024 * 1024,
+        signal
+      )
     }
     onProgress(100)
     return { book, audioPaths, epubPath }
@@ -226,11 +249,13 @@ export class ServerAbsClient {
     session: ServerAbsSession,
     book: AbsBook,
     resultPaths: string[],
-    signal: AbortSignal
+    signal: AbortSignal,
+    onVerifying: () => void = () => undefined
   ): Promise<void> {
     if (book.isFile) throw new Error('ABS subtitle upload requires a folder-based book.')
     if (resultPaths.length === 0) throw new Error('No subtitle results were available to upload.')
-    if (!book.libraryId || !book.folderId) throw new Error('ABS did not provide upload destination metadata.')
+    if (!book.libraryId || !book.folderId)
+      throw new Error('ABS did not provide upload destination metadata.')
     const segments = book.relPath.split(/[\\/]/).filter(Boolean)
     const fields: Record<string, string> = {
       library: book.libraryId,
@@ -253,9 +278,10 @@ export class ServerAbsClient {
     const uploads = audioFiles.flatMap((audio, audioIndex) => {
       const partSrt = splitSrts[audioIndex] ?? ''
       if (!partSrt.trim()) return []
-      const base = basename(audio.metadata.filename, extname(audio.metadata.filename))
-        .replace(/[^a-zA-Z0-9 _.-]/g, ' ')
-        .trim() || `transcript-${audioIndex + 1}`
+      const base =
+        basename(audio.metadata.filename, extname(audio.metadata.filename))
+          .replace(/[^a-zA-Z0-9 _.-]/g, ' ')
+          .trim() || `transcript-${audioIndex + 1}`
       return formats.map((format) => ({
         filename: `${base}.${format}`,
         content: Buffer.from(convertSrtToFormat(partSrt, format), 'utf-8'),
@@ -268,11 +294,17 @@ export class ServerAbsClient {
       const parts: Buffer[] = []
       for (const [name, value] of Object.entries(fields)) {
         if (!value) continue
-        parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`))
+        parts.push(
+          Buffer.from(
+            `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`
+          )
+        )
       }
       const filename = upload.filename.replace(/["\r\n]/g, '_')
       parts.push(
-        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="0"; filename="${filename}"\r\nContent-Type: ${upload.contentType}\r\n\r\n`),
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="0"; filename="${filename}"\r\nContent-Type: ${upload.contentType}\r\n\r\n`
+        ),
         upload.content,
         Buffer.from(`\r\n--${boundary}--\r\n`)
       )
@@ -284,7 +316,34 @@ export class ServerAbsClient {
         signal
       )
     }
-    await this.postBuffer(session, `${session.baseUrl}/api/items/${encodeURIComponent(book.id)}/scan`, Buffer.alloc(0), 'application/octet-stream', signal)
+    await this.postBuffer(
+      session,
+      `${session.baseUrl}/api/items/${encodeURIComponent(book.id)}/scan`,
+      Buffer.alloc(0),
+      'application/octet-stream',
+      signal
+    )
+    onVerifying()
+    for (let attempt = 0; attempt < 4; attempt++) {
+      signal.throwIfAborted()
+      if (attempt > 0) await delay(1000, undefined, { signal })
+      const item = await requestJson<AbsApiItem>(
+        session.baseUrl,
+        `/api/items/${encodeURIComponent(book.id)}?expanded=1`,
+        { token: session.accessToken }
+      )
+      const filenames = new Set(
+        (item.libraryFiles ?? []).map(
+          (file) =>
+            file.metadata?.filename ??
+            (file.metadata?.relPath ?? file.relPath ?? '').split(/[\\/]/).at(-1)
+        )
+      )
+      if (uploads.every((upload) => filenames.has(upload.filename))) return
+    }
+    throw new Error(
+      'Audiobookshelf accepted the upload, but the subtitle files could not be verified on this book. Download the results and check the book folder.'
+    )
   }
 
   private async postBuffer(
@@ -295,32 +354,40 @@ export class ServerAbsClient {
     signal: AbortSignal
   ): Promise<void> {
     const url = new URL(source)
-    if (url.origin !== new URL(session.baseUrl).origin) throw new Error('ABS upload origin changed.')
+    if (url.origin !== new URL(session.baseUrl).origin)
+      throw new Error('ABS upload origin changed.')
     const hostname = url.hostname.replace(/^\[|\]$/g, '')
     const pinned = isIP(hostname)
       ? { address: hostname, family: isIP(hostname) as 4 | 6 }
       : await pinnedAddress(url)
-    const lookupPinned: LookupFunction = (_hostname, _options, callback) => callback(null, pinned.address, pinned.family)
+    const lookupPinned: LookupFunction = (_hostname, _options, callback) =>
+      callback(null, pinned.address, pinned.family)
     const transport = url.protocol === 'https:' ? httpsRequest : httpRequest
     await new Promise<void>((resolvePost, reject) => {
-      const request = transport(url, {
-        method: 'POST',
-        lookup: lookupPinned,
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`,
-          'Content-Type': contentType,
-          'Content-Length': body.length
+      const request = transport(
+        url,
+        {
+          method: 'POST',
+          lookup: lookupPinned,
+          headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+            'Content-Type': contentType,
+            'Content-Length': body.length
+          },
+          timeout: 30_000
         },
-        timeout: 30_000
-      }, (response) => {
-        response.resume()
-        response.on('end', () => {
-          const status = response.statusCode ?? 500
-          if (status >= 300 && status < 400) reject(new Error('ABS upload redirects are not allowed.'))
-          else if (status < 200 || status >= 300) reject(new Error(`ABS subtitle upload failed (${status}).`))
-          else resolvePost()
-        })
-      })
+        (response) => {
+          response.resume()
+          response.on('end', () => {
+            const status = response.statusCode ?? 500
+            if (status >= 300 && status < 400)
+              reject(new Error('ABS upload redirects are not allowed.'))
+            else if (status < 200 || status >= 300)
+              reject(new Error(`ABS subtitle upload failed (${status}).`))
+            else resolvePost()
+          })
+        }
+      )
       const abort = (): void => {
         request.destroy(new Error('Cancelled'))
       }
@@ -362,8 +429,7 @@ export class ServerAbsClient {
         if (error) {
           output?.destroy()
           reject(error)
-        }
-        else resolveDownload()
+        } else resolveDownload()
       }
       const request = transport(
         url,
@@ -404,11 +470,14 @@ export class ServerAbsClient {
           let nextSpaceCheck = 256 * 1024 * 1024
           response.on('data', (chunk: Buffer) => {
             received += chunk.length
-            if (received > maxBytes) request.destroy(new Error('ABS media exceeded the download limit.'))
+            if (received > maxBytes)
+              request.destroy(new Error('ABS media exceeded the download limit.'))
             if (received >= nextSpaceCheck) {
               nextSpaceCheck += 256 * 1024 * 1024
               if (availableBytes(dirname(target)) < DEFAULT_STORAGE_RESERVE_BYTES) {
-                request.destroy(new Error('Not enough free space to continue the ABS media download.'))
+                request.destroy(
+                  new Error('Not enough free space to continue the ABS media download.')
+                )
               }
             }
           })

@@ -1,3 +1,15 @@
+# Audiobook Forge v1.2.2
+
+- Detect existing Audiobookshelf subtitles using each book’s detailed file list.
+- Show segmentation, upload, and verification status before marking a Docker job complete.
+- Verify uploaded subtitle filenames appear on the intended book after rescanning; display delivery problems with downloadable results.
+- Show successful Audiobookshelf delivery alongside download controls.
+- Delete a completed job’s stored result files from the web interface with confirmation, preserving job history and protecting active downloads.
+
+No shared audiobook folder mount is required. NVIDIA hardware qualification was skipped; no GPU runner is available. Automated Audiobookshelf regression tests use a simulated server; this patch has not had manual packaged-app or real-server acceptance testing.
+
+---
+
 # Audiobook Forge v1.2.1
 
 Version 1.2.1 replaces the unpublished 1.2.0 candidate after its Docker security scan found outdated system packages and unnecessary npm tooling in the runtime image.

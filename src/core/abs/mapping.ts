@@ -25,7 +25,7 @@ interface AbsApiTrack {
 
 interface AbsApiLibraryFile {
   relPath?: string
-  metadata?: { ext?: string }
+  metadata?: { ext?: string; filename?: string; relPath?: string }
 }
 
 export interface AbsApiItem {
@@ -50,7 +50,10 @@ export interface AbsApiItem {
 }
 
 function isSubtitleFile(file: AbsApiLibraryFile): boolean {
-  const extension = (file.metadata?.ext ?? extname(file.relPath ?? '')).toLowerCase()
+  const raw =
+    file.metadata?.ext ||
+    extname(file.metadata?.filename ?? file.metadata?.relPath ?? file.relPath ?? '')
+  const extension = (raw.startsWith('.') ? raw : `.${raw}`).toLowerCase()
   return ['.srt', '.vtt', '.lrc', '.ass', '.ssa', '.sub'].includes(extension)
 }
 

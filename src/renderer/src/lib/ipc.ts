@@ -32,6 +32,7 @@ export interface AppClient {
     showInExplorer: (path: string) => Promise<void>
     downloadArtifact: (artifactId: string) => Promise<void>
     downloadJobResults: (jobId: string) => Promise<void>
+    deleteJobResults?: (jobId: string) => Promise<void>
   }
   uploads: {
     uploadFiles: (
@@ -40,7 +41,21 @@ export interface AppClient {
     ) => Promise<WebUploadSelection>
   }
   queue: {
-    add: (job: Omit<TranscriptionJob, 'id' | 'status' | 'progress' | 'srtPath' | 'srtPaths' | 'qualityReport' | 'error' | 'createdAt' | 'startedAt' | 'completedAt'>) => Promise<TranscriptionJob>
+    add: (
+      job: Omit<
+        TranscriptionJob,
+        | 'id'
+        | 'status'
+        | 'progress'
+        | 'srtPath'
+        | 'srtPaths'
+        | 'qualityReport'
+        | 'error'
+        | 'createdAt'
+        | 'startedAt'
+        | 'completedAt'
+      >
+    ) => Promise<TranscriptionJob>
     remove: (jobId: string) => Promise<void>
     reorder: (orderedIds: string[]) => Promise<void>
     cancel: (jobId: string) => Promise<void>
