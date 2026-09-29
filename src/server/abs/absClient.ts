@@ -10,7 +10,7 @@ import { basename, dirname, extname, join } from 'path'
 import type { AbsBook, AbsLibrary, AbsLoginResult } from '../../shared/types'
 import { isBlockedNetworkHostname, isPrivateHostname, validateAbsUrl } from '../../shared/urlSafety'
 import { mapAbsItemToBook, type AbsApiItem, type AbsApiLibrary } from '../../core/abs/mapping'
-import type { ServerAbsSession } from './sessionStore'
+import type { ServerAbsSession, ServerAbsSessionStore } from './sessionStore'
 import {
   convertSrtToFormat,
   getSubtitleMimeType,
@@ -18,6 +18,15 @@ import {
 } from '../../shared/subtitleFormats'
 import type { SubtitleFormat } from '../../shared/types'
 import { availableBytes, DEFAULT_STORAGE_RESERVE_BYTES } from '../../core/storage/processingSpace'
+
+class AbsHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message)
+  }
+}
 
 interface LoginResponse {
   user?: {
@@ -101,7 +110,7 @@ async function requestJson<T>(
             return
           }
           if (status < 200 || status >= 300) {
-            reject(new Error(`Audiobookshelf request failed (${status}).`))
+            reject(new AbsHttpError(status, `Audiobookshelf request failed (${status}).`))
             return
           }
           try {
@@ -120,6 +129,81 @@ async function requestJson<T>(
 }
 
 export class ServerAbsClient {
+  private refreshes = new Map<string, Promise<ServerAbsSession>>()
+
+  constructor(private readonly sessions?: Pick<ServerAbsSessionStore, 'load' | 'save'>) {}
+
+  private async authenticated<T>(
+    session: ServerAbsSession,
+    operation: () => Promise<T>
+  ): Promise<T> {
+    const usedToken = session.accessToken
+    try {
+      return await operation()
+    } catch (error) {
+      if (!(error instanceof AbsHttpError) || error.status !== 401) throw error
+    }
+    const signInError = (): Error =>
+      new Error(
+        'Audiobookshelf session expired (401). Sign in again in Settings. Your generated results remain available for download.'
+      )
+    const saved = this.sessions?.load()
+    if (this.sessions && (!saved || saved.baseUrl !== session.baseUrl)) throw signInError()
+    if (saved && saved.accessToken !== usedToken) Object.assign(session, saved)
+    if (session.accessToken === usedToken) {
+      if (!session.refreshToken) throw signInError()
+      const key = `${session.baseUrl}\n${session.refreshToken}`
+      let refresh = this.refreshes.get(key)
+      if (!refresh) {
+        const before = { ...session }
+        refresh = (async () => {
+          const response = await requestJson<LoginResponse>(before.baseUrl, '/auth/refresh', {
+            method: 'POST',
+            headers: { 'x-refresh-token': before.refreshToken! }
+          })
+          if (!response.user?.accessToken) throw signInError()
+          const next: ServerAbsSession = {
+            baseUrl: before.baseUrl,
+            accessToken: response.user.accessToken,
+            refreshToken: response.user.refreshToken ?? before.refreshToken
+          }
+          // Never resurrect a logged-out session or overwrite a newer login.
+          if (this.sessions) {
+            const current = this.sessions.load()
+            if (
+              !current ||
+              current.baseUrl !== before.baseUrl ||
+              current.accessToken !== before.accessToken ||
+              current.refreshToken !== before.refreshToken
+            )
+              throw signInError()
+            this.sessions.save(next)
+          }
+          return next
+        })()
+        this.refreshes.set(key, refresh)
+      }
+      try {
+        Object.assign(session, await refresh)
+      } catch {
+        throw signInError()
+      } finally {
+        if (this.refreshes.get(key) === refresh) this.refreshes.delete(key)
+      }
+    }
+    try {
+      return await operation()
+    } catch (error) {
+      if (error instanceof AbsHttpError && error.status === 401) throw signInError()
+      throw error
+    }
+  }
+
+  private sessionJson<T>(session: ServerAbsSession, path: string): Promise<T> {
+    return this.authenticated(session, () =>
+      requestJson<T>(session.baseUrl, path, { token: session.accessToken })
+    )
+  }
   validateBaseUrl(input: string): string {
     const validation = validateAbsUrl(input)
     if (!validation.ok) throw new Error(validation.error)
@@ -166,10 +250,9 @@ export class ServerAbsClient {
   }
 
   async libraries(session: ServerAbsSession): Promise<AbsLibrary[]> {
-    const response = await requestJson<{ libraries: AbsApiLibrary[] }>(
-      session.baseUrl,
-      '/api/libraries',
-      { token: session.accessToken }
+    const response = await this.sessionJson<{ libraries: AbsApiLibrary[] }>(
+      session,
+      '/api/libraries'
     )
     return response.libraries.map((library) => ({
       id: library.id,
@@ -179,10 +262,9 @@ export class ServerAbsClient {
   }
 
   async books(session: ServerAbsSession, libraryId: string): Promise<AbsBook[]> {
-    const response = await requestJson<{ results: AbsApiItem[] }>(
-      session.baseUrl,
-      `/api/libraries/${encodeURIComponent(libraryId)}/items?limit=500&page=0`,
-      { token: session.accessToken }
+    const response = await this.sessionJson<{ results: AbsApiItem[] }>(
+      session,
+      `/api/libraries/${encodeURIComponent(libraryId)}/items?limit=500&page=0`
     )
     const books: AbsBook[] = new Array(response.results.length)
     let next = 0
@@ -200,10 +282,9 @@ export class ServerAbsClient {
   }
 
   async book(session: ServerAbsSession, itemId: string): Promise<AbsBook> {
-    const item = await requestJson<AbsApiItem>(
-      session.baseUrl,
-      `/api/items/${encodeURIComponent(itemId)}?expanded=1`,
-      { token: session.accessToken }
+    const item = await this.sessionJson<AbsApiItem>(
+      session,
+      `/api/items/${encodeURIComponent(itemId)}?expanded=1`
     )
     return mapAbsItemToBook(item, session.baseUrl)
   }
@@ -327,10 +408,9 @@ export class ServerAbsClient {
     for (let attempt = 0; attempt < 4; attempt++) {
       signal.throwIfAborted()
       if (attempt > 0) await delay(1000, undefined, { signal })
-      const item = await requestJson<AbsApiItem>(
-        session.baseUrl,
-        `/api/items/${encodeURIComponent(book.id)}?expanded=1`,
-        { token: session.accessToken }
+      const item = await this.sessionJson<AbsApiItem>(
+        session,
+        `/api/items/${encodeURIComponent(book.id)}?expanded=1`
       )
       const filenames = new Set(
         (item.libraryFiles ?? []).map(
@@ -347,6 +427,19 @@ export class ServerAbsClient {
   }
 
   private async postBuffer(
+    session: ServerAbsSession,
+    source: string,
+    body: Buffer,
+    contentType: string,
+    signal: AbortSignal
+  ): Promise<void> {
+    return this.authenticated(session, () => {
+      signal.throwIfAborted()
+      return this.postBufferOnce(session, source, body, contentType, signal)
+    })
+  }
+
+  private async postBufferOnce(
     session: ServerAbsSession,
     source: string,
     body: Buffer,
@@ -383,7 +476,7 @@ export class ServerAbsClient {
             if (status >= 300 && status < 400)
               reject(new Error('ABS upload redirects are not allowed.'))
             else if (status < 200 || status >= 300)
-              reject(new Error(`ABS subtitle upload failed (${status}).`))
+              reject(new AbsHttpError(status, `ABS subtitle upload failed (${status}).`))
             else resolvePost()
           })
         }
@@ -400,6 +493,19 @@ export class ServerAbsClient {
   }
 
   private async downloadFile(
+    session: ServerAbsSession,
+    source: string,
+    target: string,
+    maxBytes: number,
+    signal: AbortSignal
+  ): Promise<void> {
+    return this.authenticated(session, () => {
+      signal.throwIfAborted()
+      return this.downloadFileOnce(session, source, target, maxBytes, signal)
+    })
+  }
+
+  private async downloadFileOnce(
     session: ServerAbsSession,
     source: string,
     target: string,
@@ -448,7 +554,7 @@ export class ServerAbsClient {
           }
           if (status < 200 || status >= 300) {
             response.resume()
-            finish(new Error(`ABS media download failed (${status}).`))
+            finish(new AbsHttpError(status, `ABS media download failed (${status}).`))
             return
           }
           const declared = Number(response.headers['content-length'] ?? 0)

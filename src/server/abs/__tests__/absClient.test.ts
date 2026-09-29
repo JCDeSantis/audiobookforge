@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { ServerAbsSessionStore } from '../sessionStore'
+import { createDataPaths } from '../../../core/platform/dataPaths'
 import { createServer, type Server } from 'http'
 import type { AddressInfo } from 'net'
 import { ServerAbsClient } from '../absClient'
@@ -12,6 +14,10 @@ let root = ''
 let subtitleUploads = 0
 let indexedFiles: string[] = []
 let indexUploads = true
+let rejectedPath = ''
+let rejectionStatus = 401
+let refreshCount = 0
+let rejectRefresh = false
 
 describe('server ABS client', () => {
   beforeEach(async () => {
@@ -19,8 +25,37 @@ describe('server ABS client', () => {
     subtitleUploads = 0
     indexedFiles = ['existing.srt']
     indexUploads = true
+    rejectedPath = ''
+    rejectionStatus = 401
+    refreshCount = 0
+    rejectRefresh = false
     server = createServer((request, response) => {
       response.setHeader('Content-Type', 'application/json')
+      if (request.url === '/abs/auth/refresh') {
+        refreshCount++
+        request.resume()
+        if (rejectRefresh || request.headers['x-refresh-token'] !== 'refresh-token') {
+          response.statusCode = 401
+          response.end('{}')
+        } else {
+          response.end(
+            JSON.stringify({
+              user: { accessToken: 'renewed-token', refreshToken: 'rotated-refresh' }
+            })
+          )
+        }
+        return
+      }
+      if (
+        rejectedPath &&
+        request.url?.startsWith(rejectedPath) &&
+        request.headers.authorization !== 'Bearer renewed-token'
+      ) {
+        request.resume()
+        response.statusCode = rejectionStatus
+        response.end('{}')
+        return
+      }
       if (request.url === '/abs/login') {
         if (request.headers['x-return-tokens'] !== 'true') {
           response.statusCode = 400
@@ -139,6 +174,45 @@ describe('server ABS client', () => {
     await expect(client.books(login.session, 'lib-1')).resolves.toMatchObject([
       { id: 'book-1', title: 'The Book', authorName: 'The Author', hasSubtitles: true }
     ])
+  })
+
+  it('refreshes a token expired before upload, persists rotation and verifies delivery', async () => {
+    const sessions = new ServerAbsSessionStore(createDataPaths(root), Buffer.alloc(32, 1))
+    const session = { baseUrl, accessToken: 'abs-token', refreshToken: 'refresh-token' }
+    sessions.save(session)
+    const client = new ServerAbsClient(sessions)
+    const book = await client.book(session, 'book-1')
+    rejectedPath = '/abs/api/upload'
+    const path = join(root, 'result.srt')
+    writeFileSync(path, '1\n00:00:00,000 --> 00:00:01,000\nHello\n')
+    await client.uploadSubtitleResults(session, book, [path], new AbortController().signal)
+    expect(refreshCount).toBe(1)
+    expect(subtitleUploads).toBe(1)
+    expect(sessions.load()).toMatchObject({
+      accessToken: 'renewed-token',
+      refreshToken: 'rotated-refresh'
+    })
+  })
+
+  it('shares one refresh across concurrent expired requests', async () => {
+    const sessions = new ServerAbsSessionStore(createDataPaths(root), Buffer.alloc(32, 1))
+    const session = { baseUrl, accessToken: 'abs-token', refreshToken: 'refresh-token' }
+    sessions.save(session)
+    const client = new ServerAbsClient(sessions)
+    rejectedPath = '/abs/api/items/'
+    await Promise.all(Array.from({ length: 6 }, () => client.book({ ...session }, 'book-1')))
+    expect(refreshCount).toBe(1)
+  })
+
+  it.each([401, 403])('does not loop or conceal rejected authentication (%s)', async (status) => {
+    const client = new ServerAbsClient()
+    rejectedPath = '/abs/api/items/'
+    rejectionStatus = status
+    rejectRefresh = true
+    await expect(
+      client.book({ baseUrl, accessToken: 'expired', refreshToken: 'refresh-token' }, 'book-1')
+    ).rejects.toThrow(status === 401 ? 'Sign in again' : '(403)')
+    expect(refreshCount).toBe(status === 401 ? 1 : 0)
   })
 
   it('downloads authenticated audio and EPUB inputs into opaque job storage', async () => {

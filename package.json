@@ -1,6 +1,6 @@
 {
   "name": "audiobookforge",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "productName": "Audiobook Forge",
   "description": "Generate audiobook subtitles with Audiobookshelf integration.",
   "main": "./out/main/index.js",

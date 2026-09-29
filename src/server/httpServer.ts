@@ -245,8 +245,8 @@ export function createWebServer(config: ServerRuntimeConfig): WebServerRuntime {
       uploads.load()
       uploads.startExpirySweep(config.retentionSweepIntervalMs)
       const settings = new AppSettingsStore(config.dataPaths.settingsFile)
-      const absClient = new ServerAbsClient()
       const absSessions = new ServerAbsSessionStore(config.dataPaths, sessionSecret)
+      const absClient = new ServerAbsClient(absSessions)
       const absJobs = new ServerAbsJobAdapter(config.dataPaths, absSessions, absClient, artifacts)
       const queue = new ServerQueue(config.dataPaths, Date.now, (jobs) =>
         events.publish('queue.updated', jobs)
