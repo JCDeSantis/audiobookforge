@@ -13,13 +13,18 @@ steps:
       - npm --version
       - npm ci
 
-  - name: build-sign
+  - name: build-sign-notarize
     image: bash
     environment:
       CSC_NAME:
         from_secret: csc_name
+      APPLE_ID:
+        from_secret: apple_id
+      APPLE_APP_SPECIFIC_PASSWORD:
+        from_secret: apple_app_specific_password
+      APPLE_TEAM_ID:
+        from_secret: apple_team_id
     commands:
-      - echo "CSC_NAME=${CSC_NAME}"
       - npm run build:mac:arm64 -- --publish never
 
   - name: release
