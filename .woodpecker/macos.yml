@@ -23,7 +23,15 @@ steps:
     commands:
       - npm run build:mac:arm64
 
-  - name: artifacts
+  - name: release
     image: bash
+    secrets:
+      - github_token
+    environment:
+      GITHUB_TOKEN:
+        from_secret: github_token
     commands:
-      - ls -lh dist/*.dmg dist/*.zip
+      - gh release create "${CI_COMMIT_TAG}" dist/*.dmg dist/*.zip
+          --repo xludx/audiobookforge
+          --title "Audiobook Forge ${CI_COMMIT_TAG}"
+          --notes "macOS arm64 signed build"
