@@ -6,9 +6,11 @@ vi.mock('music-metadata', () => ({
 }))
 
 vi.mock('ffmpeg-static', () => ({ default: '/usr/bin/ffmpeg' }))
+vi.mock('ffprobe-static', () => ({ default: null }))
+vi.mock('electron', () => ({ app: { isPackaged: false } }))
 
 import { parseFile as mmParseFile } from 'music-metadata'
-import { probeFile } from '../probe'
+import { probeFile, parseChaptersFromFfprobeOutput } from '../probe'
 
 const mockParseFile = vi.mocked(mmParseFile)
 
@@ -64,48 +66,6 @@ describe('probeFile', () => {
     expect(result.hasCoverArt).toBe(false)
   })
 
-  it('maps chapters with start, end, and title', async () => {
-    mockParseFile.mockResolvedValueOnce(
-      makeMetadata({
-        format: {
-          duration: 100,
-          container: 'M4A',
-          chapters: [
-            { start: 0, end: 50, title: 'Part One' },
-            { start: 50, end: 100, title: 'Part Two' }
-          ]
-        } as unknown as IAudioMetadata['format']
-      })
-    )
-
-    const result = await probeFile('/some/file.m4b')
-
-    expect(result.chapters).toHaveLength(2)
-    expect(result.chapters[0]).toEqual({ startSec: 0, endSec: 50, title: 'Part One' })
-    expect(result.chapters[1]).toEqual({ startSec: 50, endSec: 100, title: 'Part Two' })
-  })
-
-  it('drops chapters with zero or negative duration', async () => {
-    mockParseFile.mockResolvedValueOnce(
-      makeMetadata({
-        format: {
-          duration: 100,
-          container: 'M4A',
-          chapters: [
-            { start: 0, end: 0, title: 'Empty' },
-            { start: 10, end: 5, title: 'Reversed' },
-            { start: 20, end: 40, title: 'Good' }
-          ]
-        } as unknown as IAudioMetadata['format']
-      })
-    )
-
-    const result = await probeFile('/some/file.m4b')
-
-    expect(result.chapters).toHaveLength(1)
-    expect(result.chapters[0].title).toBe('Good')
-  })
-
   it('throws when duration is not finite', async () => {
     mockParseFile.mockResolvedValueOnce(
       makeMetadata({ format: { duration: NaN, container: 'M4A', chapters: [] } as unknown as IAudioMetadata['format'] })
@@ -126,68 +86,114 @@ describe('probeFile', () => {
     expect(result.tags).toEqual({ artist: 'Author' })
   })
 
-  it('passes includeChapters: true so music-metadata parses chapter atoms', async () => {
+  it('returns empty chapters when ffprobe is unavailable', async () => {
     mockParseFile.mockResolvedValueOnce(makeMetadata())
 
-    await probeFile('/some/file.m4b')
-
-    expect(mockParseFile).toHaveBeenCalledWith(
-      '/some/file.m4b',
-      expect.objectContaining({ includeChapters: true })
-    )
-  })
-
-  it('uses next chapter start as end when chapter end is absent', async () => {
-    mockParseFile.mockResolvedValueOnce(
-      makeMetadata({
-        format: {
-          duration: 200,
-          container: 'M4A',
-          chapters: [
-            { start: 0, title: 'Part One' },
-            { start: 100, title: 'Part Two' }
-          ]
-        } as unknown as IAudioMetadata['format']
-      })
-    )
-
     const result = await probeFile('/some/file.m4b')
 
-    expect(result.chapters).toHaveLength(2)
-    expect(result.chapters[0]).toEqual({ startSec: 0, endSec: 100, title: 'Part One' })
-    expect(result.chapters[1]).toEqual({ startSec: 100, endSec: 200, title: 'Part Two' })
+    expect(result.chapters).toEqual([])
+  })
+})
+
+describe('parseChaptersFromFfprobeOutput', () => {
+  it('parses two chapters with explicit start_time and end_time', () => {
+    const stdout = JSON.stringify({
+      chapters: [
+        { start_time: '0.000000', end_time: '50.000000', tags: { title: 'Part One' } },
+        { start_time: '50.000000', end_time: '100.000000', tags: { title: 'Part Two' } }
+      ]
+    })
+
+    const result = parseChaptersFromFfprobeOutput(stdout, 100)
+
+    expect(result).toHaveLength(2)
+    expect(result[0]).toEqual({ startSec: 0, endSec: 50, title: 'Part One' })
+    expect(result[1]).toEqual({ startSec: 50, endSec: 100, title: 'Part Two' })
   })
 
-  it('uses total duration as end for last chapter when end is absent', async () => {
-    mockParseFile.mockResolvedValueOnce(
-      makeMetadata({
-        format: {
-          duration: 3600,
-          container: 'M4A',
-          chapters: [{ start: 0, title: 'Only Chapter' }]
-        } as unknown as IAudioMetadata['format']
-      })
-    )
+  it('uses next chapter start_time as end when end_time is absent', () => {
+    const stdout = JSON.stringify({
+      chapters: [
+        { start_time: '0.000000', tags: { title: 'Ch 1' } },
+        { start_time: '100.000000', tags: { title: 'Ch 2' } }
+      ]
+    })
 
-    const result = await probeFile('/some/file.m4b')
+    const result = parseChaptersFromFfprobeOutput(stdout, 200)
 
-    expect(result.chapters).toHaveLength(1)
-    expect(result.chapters[0]).toEqual({ startSec: 0, endSec: 3600, title: 'Only Chapter' })
+    expect(result[0].endSec).toBe(100)
+    expect(result[1].endSec).toBe(200)
   })
 
-  it('trims whitespace from chapter titles', async () => {
-    mockParseFile.mockResolvedValueOnce(
-      makeMetadata({
-        format: {
-          duration: 100,
-          container: 'M4A',
-          chapters: [{ start: 0, end: 50, title: '  Intro  ' }]
-        } as unknown as IAudioMetadata['format']
-      })
-    )
+  it('uses total duration as end for last chapter when end_time is absent', () => {
+    const stdout = JSON.stringify({
+      chapters: [{ start_time: '0.000000', tags: { title: 'Only' } }]
+    })
 
-    const result = await probeFile('/some/file.m4b')
+    const result = parseChaptersFromFfprobeOutput(stdout, 3600)
 
-    expect(result.chapters[0].title).toBe('Intro')
+    expect(result).toHaveLength(1)
+    expect(result[0]).toEqual({ startSec: 0, endSec: 3600, title: 'Only' })
+  })
+
+  it('filters zero-duration and negative-duration chapters', () => {
+    const stdout = JSON.stringify({
+      chapters: [
+        { start_time: '0.000000', end_time: '0.000000', tags: { title: 'Empty' } },
+        { start_time: '10.000000', end_time: '5.000000', tags: { title: 'Reversed' } },
+        { start_time: '20.000000', end_time: '40.000000', tags: { title: 'Good' } }
+      ]
+    })
+
+    const result = parseChaptersFromFfprobeOutput(stdout, 100)
+
+    expect(result).toHaveLength(1)
+    expect(result[0].title).toBe('Good')
+  })
+
+  it('trims whitespace from chapter titles', () => {
+    const stdout = JSON.stringify({
+      chapters: [{ start_time: '0.000000', end_time: '50.000000', tags: { title: '  Intro  ' } }]
+    })
+
+    const result = parseChaptersFromFfprobeOutput(stdout, 50)
+
+    expect(result[0].title).toBe('Intro')
+  })
+
+  it('returns empty array for invalid JSON', () => {
+    expect(parseChaptersFromFfprobeOutput('not json', 100)).toEqual([])
+  })
+
+  it('returns empty array when chapters key is absent', () => {
+    expect(parseChaptersFromFfprobeOutput('{}', 100)).toEqual([])
+  })
+
+  it('handles null chapter title as null', () => {
+    const stdout = JSON.stringify({
+      chapters: [{ start_time: '0.000000', end_time: '10.000000' }]
+    })
+
+    const result = parseChaptersFromFfprobeOutput(stdout, 10)
+
+    expect(result[0].title).toBeNull()
+  })
+
+  it('start_time and end_time are already seconds — no timeScale division applied', () => {
+    // ffprobe divides by the track timeScale internally before outputting start_time/end_time.
+    // Verify we use the decimal values directly without any further division.
+    const stdout = JSON.stringify({
+      chapters: [
+        { start_time: '0.000000', end_time: '2.000000', tags: { title: 'Ch 1' } },
+        { start_time: '2.000000', end_time: '3600.000000', tags: { title: 'Ch 2' } }
+      ]
+    })
+
+    const result = parseChaptersFromFfprobeOutput(stdout, 3600)
+
+    expect(result[0].startSec).toBeCloseTo(0)
+    expect(result[0].endSec).toBeCloseTo(2)
+    expect(result[1].startSec).toBeCloseTo(2)
+    expect(result[1].endSec).toBeCloseTo(3600)
   })
 })

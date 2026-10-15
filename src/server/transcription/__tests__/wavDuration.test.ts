@@ -92,6 +92,16 @@ describe('readWavDuration', () => {
     expect(() => readWavDuration(path)).toThrow('not a RIFF/WAVE file')
   })
 
+  it('throws a clear error for RF64 WAV files', () => {
+    const path = join(root, 'rf64.wav')
+    const buf = Buffer.alloc(12)
+    buf.write('RF64', 0, 'ascii')
+    buf.writeUInt32LE(0xffffffff, 4)
+    buf.write('WAVE', 8, 'ascii')
+    writeFileSync(path, buf)
+    expect(() => readWavDuration(path)).toThrow('RF64 WAV format is not supported')
+  })
+
   it('throws when file does not exist', () => {
     expect(() => readWavDuration(join(root, 'missing.wav'))).toThrow()
   })
