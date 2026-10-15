@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'child_process'
 import { cpus } from 'os'
 import { basename, extname, join } from 'path'
-import { existsSync, mkdirSync, openSync, readFileSync, readSync, closeSync, rmSync, statSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import type { DataPaths } from '../../core/platform/dataPaths'
 import { ArtifactStore } from '../../core/artifacts/artifactStore'
 import type {
