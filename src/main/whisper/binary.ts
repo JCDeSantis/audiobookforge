@@ -94,10 +94,10 @@ function getBundledWhisperExe(): string | null {
 
 export function getCpuWhisperExe(): string | null {
   const installed = findWhisperExe(getBinaryFlavorDir('cpu'))
-  if (installed && !installed.endsWith('.exe')) return installed
+  if (installed) return installed
   const legacy = isCudaBinaryDownloaded() ? null : getLegacyWhisperExe()
-  if (legacy && !legacy.endsWith('.exe')) return legacy
-  return getBundledWhisperExe()
+  if (legacy) return legacy
+  return null
 }
 
 export function getCudaWhisperExe(): string | null {

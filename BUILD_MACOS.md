@@ -183,7 +183,7 @@ npm run build:mac:signed
 # Output: dist/audiobookforge-<version>.dmg
 ```
 
-The resulting DMG installs without Gatekeeper warnings.
+The resulting DMG is Developer ID signed. On macOS 12 and later, Gatekeeper still requires right-click → Open on first launch unless the build is also notarized. To enable notarization, add `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` to `.env.mac` and set `notarize: true` in `electron-builder.yml`.
 
 ### Universal binary (Intel + Apple Silicon)
 

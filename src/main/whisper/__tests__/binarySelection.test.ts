@@ -69,4 +69,14 @@ describe('separate Whisper CPU and CUDA installations', () => {
     )
     expect(getWhisperExe()).toBe(cpu)
   })
+
+  it('returns a Windows .exe CPU binary without rejecting it', () => {
+    const cpu = install('cpu')
+    expect(getCpuWhisperExe()).toBe(cpu)
+  })
+
+  it('returns null for CPU when only a GPU binary is installed', () => {
+    install('gpu')
+    expect(getCpuWhisperExe()).toBeNull()
+  })
 })
