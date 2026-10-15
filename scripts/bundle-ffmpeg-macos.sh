@@ -12,7 +12,8 @@ fi
 # Use ffmpeg-static npm package — statically linked against system frameworks only,
 # so it can be re-signed with a Developer ID cert and spawned from a hardened-runtime process.
 FFMPEG_SRC="node_modules/ffmpeg-static/ffmpeg"
-FFPROBE_SRC="node_modules/ffprobe-static/bin/darwin/arm64/ffprobe"
+HOST_ARCH="$(uname -m)"
+FFPROBE_SRC="node_modules/ffprobe-static/bin/darwin/${HOST_ARCH}/ffprobe"
 
 if [[ ! -f "${FFMPEG_SRC}" ]]; then
   echo "ffmpeg-static not found — run: npm ci" >&2

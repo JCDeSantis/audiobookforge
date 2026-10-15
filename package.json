@@ -40,8 +40,6 @@
     "build:ffmpeg:macos": "bash scripts/bundle-ffmpeg-macos.sh",
     "build:mac:signed": "bash scripts/build-mac-signed.sh",
     "build:mac:arm64": "npm run build:whisper:macos && npm run build:ffmpeg:macos && npm run build && npm run build:server && electron-builder --mac --arm64",
-    "build:mac:x64": "npm run build:whisper:macos && npm run build:ffmpeg:macos && npm run build && npm run build:server && electron-builder --mac --x64",
-    "build:mac:universal": "npm run build:whisper:macos && npm run build:ffmpeg:macos && npm run build && npm run build:server && electron-builder --mac --universal",
     "build:linux": "electron-vite build && electron-builder --linux"
   },
   "dependencies": {

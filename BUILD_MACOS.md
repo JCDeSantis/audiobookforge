@@ -13,9 +13,15 @@ Three modes are available on M-series Macs:
 ## Prerequisites
 
 ```bash
-xcode-select --install        # Xcode CLI tools
+xcode-select --install        # Xcode CLI tools (required for all modes)
 node --version                # must be 22+; use https://nodejs.org or nvm
 npm ci                        # install dependencies
+```
+
+Mode 2 (native server) additionally requires CMake and FFmpeg via Homebrew:
+
+```bash
+brew install cmake ffmpeg
 ```
 
 ---
@@ -101,9 +107,15 @@ export ABF_WHISPER_ALLOW_GPU=true
 export ABF_DATA_DIR="${HOME}/.local/share/audiobookforge"
 export ABF_WEB_PASSWORD="yourpassword"
 export ABF_PORT=3000
+export ABF_FFMPEG_PATH="$(which ffmpeg)"
+export ABF_FFPROBE_PATH="$(which ffprobe)"
 
 node dist/server/index.mjs
 ```
+
+`ABF_FFMPEG_PATH` and `ABF_FFPROBE_PATH` default to `/usr/bin/ffmpeg` and `/usr/bin/ffprobe`
+which do not exist on stock macOS. The `brew install ffmpeg` step above installs them to
+`/opt/homebrew/bin/` — setting the env vars points the server at the Homebrew binaries.
 
 Open http://localhost:3000.
 
@@ -127,6 +139,22 @@ ggml_metal_init
 
 The macOS Electron app automatically starts the web server when it launches.
 The server listens on port 3000 and is accessible from other devices on your network.
+
+**Desktop window vs. server runtime:** The Electron window communicates with the app
+via IPC — it does not go through the web server. LAN clients that connect on port 3000
+use the server runtime directly. Both share the same data directory:
+```
+~/Library/Application Support/Audiobook Forge/
+```
+Jobs, models, settings, tokens, and queued results are stored there and visible to both
+the desktop window and any LAN browser session.
+
+**Port conflicts:** If port 3000 is already in use the embedded server will fail to
+start and the desktop window will show no queue or progress. Free the port before
+launching, or set `ABF_PORT` to an available port:
+```bash
+ABF_PORT=3001 open -a "Audiobook Forge"
+```
 
 On first launch, a random password is generated and saved to:
 ```
