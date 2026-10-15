@@ -1,0 +1,29 @@
+labels:
+  platform: darwin/arm64
+
+when:
+  - event: tag
+    ref: refs/tags/v*
+
+steps:
+  - name: install
+    image: bash
+    commands:
+      - node --version
+      - npm --version
+      - npm ci
+
+  - name: build-sign
+    image: bash
+    secrets:
+      - csc_name
+    environment:
+      CSC_NAME:
+        from_secret: csc_name
+    commands:
+      - npm run build:mac:arm64
+
+  - name: artifacts
+    image: bash
+    commands:
+      - ls -lh dist/*.dmg dist/*.zip

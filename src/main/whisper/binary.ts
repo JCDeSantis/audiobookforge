@@ -86,16 +86,25 @@ function getLegacyWhisperExe(): string | null {
   return legacyExe
 }
 
+function getBundledWhisperExe(): string | null {
+  if (!app.isPackaged || process.platform !== 'darwin') return null
+  const bundled = join(process.resourcesPath, 'whisper', 'whisper-cli')
+  return existsSync(bundled) ? bundled : null
+}
+
 export function getCpuWhisperExe(): string | null {
   const installed = findWhisperExe(getBinaryFlavorDir('cpu'))
-  if (installed) return installed
-  return isCudaBinaryDownloaded() ? null : getLegacyWhisperExe()
+  if (installed && !installed.endsWith('.exe')) return installed
+  const legacy = isCudaBinaryDownloaded() ? null : getLegacyWhisperExe()
+  if (legacy && !legacy.endsWith('.exe')) return legacy
+  return getBundledWhisperExe()
 }
 
 export function getCudaWhisperExe(): string | null {
   const installed = findWhisperExe(getBinaryFlavorDir('gpu'))
   if (installed) return installed
-  return isCudaBinaryDownloaded() ? getLegacyWhisperExe() : null
+  if (isCudaBinaryDownloaded()) return getLegacyWhisperExe()
+  return getBundledWhisperExe()
 }
 
 export function getWhisperExe(): string | null {
@@ -213,6 +222,7 @@ export function isCudaBinaryDownloaded(): boolean {
 }
 
 export function isGpuEnabled(): boolean {
+  if (getBundledWhisperExe() !== null) return true
   const marker = readBinaryMarker()
   if (marker) {
     return marker.enabled === true

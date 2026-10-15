@@ -15,6 +15,7 @@ export interface ServerRuntimeConfig {
   ffprobePath: string
   whisperCpuPath: string
   whisperCudaPath: string
+  whisperAllowGpu: boolean
   maxUploadBytes: number
   freeSpaceReserveBytes: number
   uploadRetentionMs: number
@@ -89,6 +90,7 @@ export function loadServerRuntimeConfig(
       environment.ABF_WHISPER_CPU_PATH?.trim() || '/opt/audiobookforge/whisper/cpu/whisper-cli',
     whisperCudaPath:
       environment.ABF_WHISPER_CUDA_PATH?.trim() || '/opt/audiobookforge/whisper/cuda/whisper-cli',
+    whisperAllowGpu: environment.ABF_WHISPER_ALLOW_GPU === 'true',
     maxUploadBytes: parsePositiveNumber(
       environment.ABF_MAX_UPLOAD_BYTES,
       DEFAULT_MAX_UPLOAD_BYTES,

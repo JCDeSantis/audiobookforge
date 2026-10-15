@@ -1,6 +1,9 @@
 node_modules
 dist
 out
+build/whisper-macos
+build/ffmpeg-macos
+.env.mac
 .superpowers
 .worktrees
 .tmp-*
