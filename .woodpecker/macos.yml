@@ -1,0 +1,34 @@
+labels:
+  platform: darwin/arm64
+
+when:
+  - event: tag
+    ref: refs/tags/v*
+
+steps:
+  - name: install
+    image: bash
+    commands:
+      - node --version
+      - npm --version
+      - npm ci
+
+  - name: build-sign
+    image: bash
+    environment:
+      CSC_NAME:
+        from_secret: csc_name
+    commands:
+      - echo "CSC_NAME=${CSC_NAME}"
+      - npm run build:mac:arm64 -- --publish never
+
+  - name: release
+    image: bash
+    environment:
+      GITHUB_TOKEN:
+        from_secret: github_token
+    commands:
+      - gh release create "${CI_COMMIT_TAG}" dist/*.dmg dist/*.zip
+          --repo xludx/audiobookforge
+          --title "Audiobook Forge ${CI_COMMIT_TAG}"
+          --notes "macOS arm64 signed build"
