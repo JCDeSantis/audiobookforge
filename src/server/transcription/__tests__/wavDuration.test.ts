@@ -95,4 +95,12 @@ describe('readWavDuration', () => {
   it('throws when file does not exist', () => {
     expect(() => readWavDuration(join(root, 'missing.wav'))).toThrow()
   })
+
+  it('returns duration over 20 minutes so the transcriber can produce multiple segments', () => {
+    const byteRate = 32000
+    const durationSec = 75 * 60
+    const path = join(root, 'long.wav')
+    writeFileSync(path, makeWav(byteRate, byteRate * durationSec, listChunk(12)))
+    expect(readWavDuration(path)).toBeCloseTo(durationSec, 5)
+  })
 })

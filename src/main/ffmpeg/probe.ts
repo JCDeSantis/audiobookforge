@@ -34,7 +34,7 @@ export async function detectNvenc(): Promise<boolean> {
 }
 
 export async function probeFile(filePath: string): Promise<ProbeResult> {
-  const meta = await mmParseFile(filePath, { duration: true, skipCovers: false })
+  const meta = await mmParseFile(filePath, { duration: true, includeChapters: true, skipCovers: false })
 
   const duration = meta.format.duration ?? 0
   if (!Number.isFinite(duration)) {
@@ -48,10 +48,11 @@ export async function probeFile(filePath: string): Promise<ProbeResult> {
   if (meta.common.artist) tags['artist'] = meta.common.artist
   if (meta.common.album) tags['album'] = meta.common.album
 
-  const parsedChapters: ProbeChapter[] = (meta.format.chapters ?? [])
-    .map((chapter) => ({
+  const rawChapters = meta.format.chapters ?? []
+  const parsedChapters: ProbeChapter[] = rawChapters
+    .map((chapter, index) => ({
       startSec: chapter.start,
-      endSec: chapter.end ?? chapter.start,
+      endSec: chapter.end ?? rawChapters[index + 1]?.start ?? duration,
       title: chapter.title?.trim() || null
     }))
     .filter((chapter) => Number.isFinite(chapter.startSec) && Number.isFinite(chapter.endSec))

@@ -125,4 +125,69 @@ describe('probeFile', () => {
 
     expect(result.tags).toEqual({ artist: 'Author' })
   })
+
+  it('passes includeChapters: true so music-metadata parses chapter atoms', async () => {
+    mockParseFile.mockResolvedValueOnce(makeMetadata())
+
+    await probeFile('/some/file.m4b')
+
+    expect(mockParseFile).toHaveBeenCalledWith(
+      '/some/file.m4b',
+      expect.objectContaining({ includeChapters: true })
+    )
+  })
+
+  it('uses next chapter start as end when chapter end is absent', async () => {
+    mockParseFile.mockResolvedValueOnce(
+      makeMetadata({
+        format: {
+          duration: 200,
+          container: 'M4A',
+          chapters: [
+            { start: 0, title: 'Part One' },
+            { start: 100, title: 'Part Two' }
+          ]
+        } as unknown as IAudioMetadata['format']
+      })
+    )
+
+    const result = await probeFile('/some/file.m4b')
+
+    expect(result.chapters).toHaveLength(2)
+    expect(result.chapters[0]).toEqual({ startSec: 0, endSec: 100, title: 'Part One' })
+    expect(result.chapters[1]).toEqual({ startSec: 100, endSec: 200, title: 'Part Two' })
+  })
+
+  it('uses total duration as end for last chapter when end is absent', async () => {
+    mockParseFile.mockResolvedValueOnce(
+      makeMetadata({
+        format: {
+          duration: 3600,
+          container: 'M4A',
+          chapters: [{ start: 0, title: 'Only Chapter' }]
+        } as unknown as IAudioMetadata['format']
+      })
+    )
+
+    const result = await probeFile('/some/file.m4b')
+
+    expect(result.chapters).toHaveLength(1)
+    expect(result.chapters[0]).toEqual({ startSec: 0, endSec: 3600, title: 'Only Chapter' })
+  })
+
+  it('trims whitespace from chapter titles', async () => {
+    mockParseFile.mockResolvedValueOnce(
+      makeMetadata({
+        format: {
+          duration: 100,
+          container: 'M4A',
+          chapters: [{ start: 0, end: 50, title: '  Intro  ' }]
+        } as unknown as IAudioMetadata['format']
+      })
+    )
+
+    const result = await probeFile('/some/file.m4b')
+
+    expect(result.chapters[0].title).toBe('Intro')
+  })
 })
