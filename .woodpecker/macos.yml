@@ -19,7 +19,8 @@ steps:
       CSC_NAME:
         from_secret: csc_name
     commands:
-      - npm run build:mac:arm64
+      - echo "CSC_NAME=${CSC_NAME}"
+      - npm run build:mac:arm64 -- --publish never
 
   - name: release
     image: bash
