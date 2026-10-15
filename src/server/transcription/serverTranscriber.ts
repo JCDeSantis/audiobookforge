@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'child_process'
 import { cpus } from 'os'
 import { basename, extname, join } from 'path'
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, openSync, readFileSync, readSync, closeSync, rmSync, statSync, writeFileSync } from 'fs'
 import type { DataPaths } from '../../core/platform/dataPaths'
 import { ArtifactStore } from '../../core/artifacts/artifactStore'
 import type {
@@ -42,6 +42,7 @@ export interface ServerTranscriberConfig {
   ffprobePath: string
   whisperCpuPath: string
   whisperCudaPath: string
+  whisperAllowGpu?: boolean
   resultRetentionMs?: number
   checkpointRetentionMs?: number
 }
@@ -363,25 +364,27 @@ export class ServerTranscriber {
     }
   }
 
-  private async probeDuration(wavPath: string, signal: AbortSignal): Promise<number> {
-    const result = await this.run(
-      this.config.ffprobePath,
-      [
-        '-v',
-        'error',
-        '-show_entries',
-        'format=duration',
-        '-of',
-        'default=noprint_wrappers=1:nokey=1',
-        wavPath
-      ],
-      signal
-    )
-    const duration = Number.parseFloat(result.stdout.trim())
-    if (result.code !== 0 || !Number.isFinite(duration) || duration <= 0) {
-      throw new Error(`Unable to determine prepared audio duration: ${result.stderr.slice(-800)}`)
-    }
-    return duration
+  private probeDuration(wavPath: string, _signal: AbortSignal): Promise<number> {
+    // Read WAV header directly — ffmpeg always produces a standard 44-byte RIFF/PCM header.
+    // bytes 28-31: ByteRate (sampleRate * channels * bitsPerSample/8)
+    // bytes 40-43: data chunk size in bytes
+    // duration = dataSize / byteRate
+    return new Promise((resolve, reject) => {
+      let fd = -1
+      try {
+        fd = openSync(wavPath, 'r')
+        const header = Buffer.alloc(44)
+        readSync(fd, header, 0, 44, 0)
+        const byteRate = header.readUInt32LE(28)
+        const dataSize = header.readUInt32LE(40)
+        if (byteRate === 0) throw new Error('invalid WAV byteRate in header')
+        resolve(dataSize / byteRate)
+      } catch (err) {
+        reject(new Error(`Unable to determine prepared audio duration: ${String(err)}`))
+      } finally {
+        if (fd >= 0) closeSync(fd)
+      }
+    })
   }
 
   private runWhisper(
@@ -410,7 +413,7 @@ export class ServerTranscriber {
       String(Math.max(1, Math.min(cpus().length, 8)))
     ]
     if (promptText) args.push('--prompt', promptText)
-    if (backend === 'cpu') args.push('--no-gpu')
+    if (backend === 'cpu' && !this.config.whisperAllowGpu) args.push('--no-gpu')
     return this.run(executable, args, signal, (stderr) => {
       const match = stderr.match(/progress\s*=\s*(\d+)%/)
       if (match) onProgress({ phase: 'transcribing', percent: Number(match[1]) })
