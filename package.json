@@ -1,6 +1,6 @@
 {
   "name": "audiobookforge",
-  "version": "1.2.3",
+  "version": "1.3.0",
   "productName": "Audiobook Forge",
   "description": "Generate audiobook subtitles with Audiobookshelf integration.",
   "main": "./out/main/index.js",
@@ -36,6 +36,12 @@
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "electron-vite build && electron-builder --mac",
+    "build:whisper:macos": "bash scripts/build-whisper-macos.sh",
+    "build:ffmpeg:macos": "bash scripts/bundle-ffmpeg-macos.sh",
+    "build:mac:signed": "bash scripts/build-mac-signed.sh",
+    "build:mac:arm64": "npm run build:whisper:macos && npm run build:ffmpeg:macos && npm run build && npm run build:server && electron-builder --mac --arm64",
+    "build:mac:x64": "npm run build:whisper:macos && npm run build:ffmpeg:macos && npm run build && npm run build:server && electron-builder --mac --x64",
+    "build:mac:universal": "npm run build:whisper:macos && npm run build:ffmpeg:macos && npm run build && npm run build:server && electron-builder --mac --universal",
     "build:linux": "electron-vite build && electron-builder --linux"
   },
   "dependencies": {

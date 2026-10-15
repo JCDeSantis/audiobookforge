@@ -31,6 +31,7 @@ describe('authenticated web runtime', () => {
       ffprobePath: 'ffprobe',
       whisperCpuPath: 'whisper-cpu',
       whisperCudaPath: 'whisper-cuda',
+      whisperAllowGpu: false,
       maxUploadBytes: 100 * 1024 * 1024 * 1024,
       freeSpaceReserveBytes: 5 * 1024 * 1024 * 1024,
       uploadRetentionMs: 7 * 24 * 60 * 60 * 1000,
