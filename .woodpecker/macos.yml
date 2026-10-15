@@ -15,8 +15,6 @@ steps:
 
   - name: build-sign
     image: bash
-    secrets:
-      - csc_name
     environment:
       CSC_NAME:
         from_secret: csc_name
@@ -25,8 +23,6 @@ steps:
 
   - name: release
     image: bash
-    secrets:
-      - github_token
     environment:
       GITHUB_TOKEN:
         from_secret: github_token
