@@ -303,4 +303,32 @@ describe('QueuePanel', () => {
 
     expect(removeMock).toHaveBeenCalledWith('queued-job')
   })
+
+  it('copy button on failed job writes error text to clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true
+    })
+
+    const errorMessage = 'spawn /usr/bin/whisper-cli ENOENT'
+    useAppStore.getState().setJobs([
+      createJob({
+        id: 'failed-job',
+        status: 'failed',
+        error: errorMessage,
+        completedAt: Date.now()
+      })
+    ])
+
+    render(<QueuePanel />)
+    fireEvent.click(screen.getByRole('button', { name: 'Finished (1)' }))
+
+    const copyButton = screen.getByTitle('Copy error to clipboard')
+    expect(copyButton).toBeInTheDocument()
+
+    fireEvent.click(copyButton)
+
+    expect(writeText).toHaveBeenCalledWith(errorMessage)
+  })
 })
