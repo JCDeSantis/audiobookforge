@@ -258,3 +258,98 @@ describe('server ABS client', () => {
     ).rejects.toThrow('could not be verified on this book')
   })
 })
+
+describe('library pagination beyond one page', () => {
+  let paginationServer: Server | null = null
+  let paginationBaseUrl = ''
+
+  const PAGE_SIZE = 500
+  const TOTAL_BOOKS = PAGE_SIZE + 2
+
+  function makeItem(index: number) {
+    return {
+      id: `book-${index}`,
+      libraryId: 'lib-pg',
+      media: { metadata: { title: `Book ${index}`, authorName: 'Author' } }
+    }
+  }
+
+  beforeEach(async () => {
+    const page0Items = Array.from({ length: PAGE_SIZE }, (_, i) => makeItem(i))
+    const page1Items = Array.from({ length: TOTAL_BOOKS - PAGE_SIZE }, (_, i) =>
+      makeItem(PAGE_SIZE + i)
+    )
+
+    paginationServer = createServer((request, response) => {
+      response.setHeader('Content-Type', 'application/json')
+      if (request.url === '/abs/login') {
+        if (request.headers['x-return-tokens'] !== 'true') {
+          response.statusCode = 400
+          response.end('{}')
+          return
+        }
+        response.end(
+          JSON.stringify({
+            user: { username: 'jacob', type: 'user', accessToken: 'token' },
+            serverSettings: { version: '2.29.0' }
+          })
+        )
+        return
+      }
+      if (request.url === `/abs/api/libraries/lib-pg/items?limit=${PAGE_SIZE}&page=0`) {
+        response.end(JSON.stringify({ results: page0Items, total: TOTAL_BOOKS }))
+        return
+      }
+      if (request.url === `/abs/api/libraries/lib-pg/items?limit=${PAGE_SIZE}&page=1`) {
+        response.end(JSON.stringify({ results: page1Items, total: TOTAL_BOOKS }))
+        return
+      }
+      if (request.url?.startsWith('/abs/api/items/book-')) {
+        const id = request.url.replace('/abs/api/items/', '').replace('?expanded=1', '')
+        const index = parseInt(id.replace('book-', ''), 10)
+        response.end(
+          JSON.stringify({
+            id,
+            libraryId: 'lib-pg',
+            folderId: 'folder-1',
+            relPath: `Author/Book ${index}`,
+            libraryFiles: [],
+            media: {
+              metadata: { title: `Book ${index}`, authorName: 'Author' },
+              audioFiles: [
+                {
+                  index: 0,
+                  ino: `ino-${index}`,
+                  metadata: { filename: `book-${index}.mp3`, ext: '.mp3', path: '', relPath: '' },
+                  duration: 100,
+                  mimeType: 'audio/mpeg',
+                  addedAt: 1,
+                  updatedAt: 1
+                }
+              ]
+            }
+          })
+        )
+        return
+      }
+      response.statusCode = 404
+      response.end('{}')
+    })
+    await new Promise<void>((resolve) => paginationServer!.listen(0, '127.0.0.1', resolve))
+    paginationBaseUrl = `http://127.0.0.1:${(paginationServer!.address() as AddressInfo).port}/abs`
+  })
+
+  afterEach(async () => {
+    await new Promise<void>((resolve, reject) =>
+      paginationServer?.close((error) => (error ? reject(error) : resolve()))
+    )
+    paginationServer = null
+  })
+
+  it('fetches all books across multiple pages', async () => {
+    const client = new ServerAbsClient()
+    const { session } = await client.login(paginationBaseUrl, 'jacob', 'secret')
+    const books = await client.books(session, 'lib-pg')
+    expect(books).toHaveLength(TOTAL_BOOKS)
+  })
+})

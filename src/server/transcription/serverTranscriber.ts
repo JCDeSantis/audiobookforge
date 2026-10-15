@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'child_process'
 import { cpus } from 'os'
 import { basename, extname, join } from 'path'
-import { existsSync, mkdirSync, openSync, readFileSync, readSync, closeSync, rmSync, statSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
 import type { DataPaths } from '../../core/platform/dataPaths'
 import { ArtifactStore } from '../../core/artifacts/artifactStore'
 import type {
@@ -22,6 +22,7 @@ import {
   estimateProcessingBytes,
   isDiskFullError
 } from '../../core/storage/processingSpace'
+import { readWavDuration } from './wavDuration'
 
 const SEGMENT_SECONDS = 20 * 60
 
@@ -365,26 +366,11 @@ export class ServerTranscriber {
   }
 
   private probeDuration(wavPath: string, _signal: AbortSignal): Promise<number> {
-    // Read WAV header directly — ffmpeg always produces a standard 44-byte RIFF/PCM header.
-    // bytes 28-31: ByteRate (sampleRate * channels * bitsPerSample/8)
-    // bytes 40-43: data chunk size in bytes
-    // duration = dataSize / byteRate
-    return new Promise((resolve, reject) => {
-      let fd = -1
-      try {
-        fd = openSync(wavPath, 'r')
-        const header = Buffer.alloc(44)
-        readSync(fd, header, 0, 44, 0)
-        const byteRate = header.readUInt32LE(28)
-        const dataSize = header.readUInt32LE(40)
-        if (byteRate === 0) throw new Error('invalid WAV byteRate in header')
-        resolve(dataSize / byteRate)
-      } catch (err) {
-        reject(new Error(`Unable to determine prepared audio duration: ${String(err)}`))
-      } finally {
-        if (fd >= 0) closeSync(fd)
-      }
-    })
+    try {
+      return Promise.resolve(readWavDuration(wavPath))
+    } catch (err) {
+      return Promise.reject(new Error(`Unable to determine prepared audio duration: ${String(err)}`))
+    }
   }
 
   private runWhisper(
