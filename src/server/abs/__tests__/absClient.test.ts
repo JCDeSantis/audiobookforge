@@ -266,7 +266,7 @@ describe('library pagination beyond one page', () => {
   const PAGE_SIZE = 500
   const TOTAL_BOOKS = PAGE_SIZE + 2
 
-  function makeItem(index: number) {
+  function makeItem(index: number): { id: string; libraryId: string; media: { metadata: { title: string; authorName: string } } } {
     return {
       id: `book-${index}`,
       libraryId: 'lib-pg',

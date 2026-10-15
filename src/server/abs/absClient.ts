@@ -277,7 +277,7 @@ export class ServerAbsClient {
     const books: AbsBook[] = new Array(allResults.length)
     let next = 0
     await Promise.all(
-      Array.from({ length: Math.min(6, allResults.length) }, async () => {
+      Array.from({ length: Math.min(6, allResults.length) }, async (): Promise<void> => {
         while (next < allResults.length) {
           const index = next++
           // Library listings can omit libraryFiles. Fetch details rather than

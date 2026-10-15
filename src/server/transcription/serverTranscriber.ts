@@ -140,7 +140,7 @@ export class ServerTranscriber {
       onProgress({ phase: 'preparing', percent: 100 })
 
       const promptText = epubPath ? await extractEpubVocabulary(epubPath) : ''
-      const duration = await this.probeDuration(wavPath, signal)
+      const duration = await this.probeDuration(wavPath)
       const segmentCount = Math.max(1, Math.ceil(duration / SEGMENT_SECONDS))
       const checkpoints = new ServerCheckpointStore(
         this.paths,
@@ -365,7 +365,7 @@ export class ServerTranscriber {
     }
   }
 
-  private probeDuration(wavPath: string, _signal: AbortSignal): Promise<number> {
+  private probeDuration(wavPath: string): Promise<number> {
     try {
       return Promise.resolve(readWavDuration(wavPath))
     } catch (err) {
