@@ -28,10 +28,6 @@ steps:
       APPLE_TEAM_ID:
         from_secret: apple_team_id
     commands:
-      - echo "HOME=$HOME XDG_CONFIG_HOME=$XDG_CONFIG_HOME"
-      - find "$HOME" -name "*.toml" 2>/dev/null || true
-      - find "$HOME/.config" -name "*rcodesign*" 2>/dev/null || true
-      - /Users/juha/.local/bin/rcodesign --config-file /dev/null sign --help 2>&1 | head -3 || true
       - node scripts/patch-electron-builder-codesign.mjs
       - npm run build:mac:arm64 -- --publish never
 
