@@ -399,7 +399,8 @@ export class ServerTranscriber {
       String(Math.max(1, Math.min(cpus().length, 8)))
     ]
     if (promptText) args.push('--prompt', promptText)
-    if (backend === 'cpu' && !this.config.whisperAllowGpu) args.push('--no-gpu')
+    const allowGpu = this.config.whisperAllowGpu && this.getComputePreference() !== 'cpu'
+    if (backend === 'cpu' && !allowGpu) args.push('--no-gpu')
     return this.run(executable, args, signal, (stderr) => {
       const match = stderr.match(/progress\s*=\s*(\d+)%/)
       if (match) onProgress({ phase: 'transcribing', percent: Number(match[1]) })

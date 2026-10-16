@@ -7,7 +7,9 @@ export function readWavDuration(wavPath: string): number {
 
     const riff = Buffer.alloc(12)
     if (readSync(fd, riff, 0, 12, 0) < 12) throw new Error('file too short to be a WAV')
-    if (riff.toString('ascii', 0, 4) !== 'RIFF' || riff.toString('ascii', 8, 12) !== 'WAVE') {
+    const fourCC = riff.toString('ascii', 0, 4)
+    if (fourCC === 'RF64') throw new Error('RF64 WAV format is not supported; convert to standard RIFF/WAV first')
+    if (fourCC !== 'RIFF' || riff.toString('ascii', 8, 12) !== 'WAVE') {
       throw new Error('not a RIFF/WAVE file')
     }
 

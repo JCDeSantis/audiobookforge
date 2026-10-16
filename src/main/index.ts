@@ -14,6 +14,7 @@ import {
   initializeDesktopArtifacts,
   stopDesktopArtifactRetention
 } from './platform/desktopArtifacts'
+import { startEmbeddedServer, stopEmbeddedServer } from './server/serverProcess'
 
 function getWindowIconPath(): string {
   if (app.isPackaged) {
@@ -116,6 +117,10 @@ app.whenReady().then(() => {
     app.setAppUserModelId('com.audiobookforge.app')
   }
 
+  if (process.platform === 'darwin') {
+    startEmbeddedServer()
+  }
+
   registerSettingsIpc()
   registerRuntimeIpc()
   registerStorageIpc()
@@ -140,4 +145,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   stopDesktopArtifactRetention()
+  if (process.platform === 'darwin') {
+    stopEmbeddedServer()
+  }
 })

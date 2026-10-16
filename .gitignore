@@ -1,12 +1,16 @@
 node_modules
 dist
 out
+build/whisper-macos
+build/ffmpeg-macos
+.env.mac
 .superpowers
 .worktrees
 .tmp-*
 .DS_Store
 .eslintcache
 *.log*
+*.tsbuildinfo
 secrets/
 test-results/
 playwright-report/

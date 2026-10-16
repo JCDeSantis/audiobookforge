@@ -1,0 +1,68 @@
+# syntax=docker/dockerfile:1.7
+# arm64 (Apple Silicon / M-series) variant — CPU-only whisper, no CUDA.
+# Linux containers on macOS have no Metal/GPU passthrough; GPU acceleration
+# requires the native server mode (see BUILD_MACOS.md).
+
+ARG WHISPER_VERSION=v1.8.3
+ARG WHISPER_COMMIT=2eeeba56e9edd762b4b38467bab96c2517163158
+
+FROM ubuntu:22.04 AS whisper-cpu-arm64
+ARG WHISPER_VERSION
+ARG WHISPER_COMMIT
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    build-essential ca-certificates cmake git \
+    && rm -rf /var/lib/apt/lists/*
+RUN git init /src/whisper.cpp \
+    && git -C /src/whisper.cpp remote add origin https://github.com/ggml-org/whisper.cpp.git \
+    && git -C /src/whisper.cpp fetch --depth 1 origin "${WHISPER_COMMIT}" \
+    && git -C /src/whisper.cpp checkout --detach FETCH_HEAD \
+    && test "$(git -C /src/whisper.cpp rev-parse HEAD)" = "${WHISPER_COMMIT}" \
+    && cmake -S /src/whisper.cpp -B /src/whisper.cpp/build \
+      -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF \
+      -DGGML_CUDA=OFF -DGGML_METAL=OFF \
+    && cmake --build /src/whisper.cpp/build --config Release --target whisper-cli -j"$(nproc)" \
+    && install -Dm755 /src/whisper.cpp/build/bin/whisper-cli /artifacts/cpu/whisper-cli
+
+FROM node:22-bullseye AS application-build
+WORKDIR /build
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
+COPY . .
+RUN npm run build:web && npm run build:server
+
+FROM ubuntu:22.04 AS runtime
+LABEL org.opencontainers.image.source="https://github.com/JCDeSantis/audiobookforge"
+LABEL org.opencontainers.image.description="Audiobook Forge arm64 CPU web runtime"
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ca-certificates curl dumb-init ffmpeg \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 audiobookforge \
+    && useradd --uid 10001 --gid audiobookforge --create-home --shell /usr/sbin/nologin audiobookforge \
+    && mkdir -p /app/out /data /opt/audiobookforge/whisper/cpu \
+    && chown -R audiobookforge:audiobookforge /app /data
+
+# Reuse the node binary from the build stage — avoids adding a package repo to
+# the final image. Bullseye glibc is compatible with Ubuntu 22.04 arm64.
+COPY --from=application-build /usr/local/bin/node /usr/local/bin/node
+COPY --from=application-build --chown=audiobookforge:audiobookforge /build/dist/server /app/server
+COPY --from=application-build --chown=audiobookforge:audiobookforge /build/out/renderer /app/out/renderer
+COPY --from=whisper-cpu-arm64 /artifacts/cpu/whisper-cli /opt/audiobookforge/whisper/cpu/whisper-cli
+
+ENV NODE_ENV=production \
+    ABF_HOST=0.0.0.0 \
+    ABF_PORT=3000 \
+    ABF_DATA_DIR=/data \
+    ABF_WEB_ROOT=/app/out/renderer \
+    ABF_WHISPER_CPU_PATH=/opt/audiobookforge/whisper/cpu/whisper-cli
+
+WORKDIR /app
+VOLUME ["/data"]
+EXPOSE 3000
+USER audiobookforge
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl --fail --silent http://127.0.0.1:3000/healthz >/dev/null || exit 1
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["node", "/app/server/index.mjs"]

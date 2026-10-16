@@ -11,6 +11,7 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
+  - out/renderer/**
 win:
   executableName: audiobook-forge
 nsis:
@@ -19,11 +20,22 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
-  notarize: false
+  notarize: true
+  extraResources:
+    - from: dist/server
+      to: server
+    - from: build/whisper-macos/whisper-cli
+      to: whisper/whisper-cli
+    - from: build/ffmpeg-macos/ffmpeg
+      to: ffmpeg/ffmpeg
+    - from: build/ffmpeg-macos/ffprobe
+      to: ffmpeg/ffprobe
 dmg:
   artifactName: ${name}-${version}.${ext}
 linux:
