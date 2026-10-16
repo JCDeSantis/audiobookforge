@@ -11,6 +11,7 @@ if [[ ! -f "${FFPROBE_OUT}" ]]; then
 fi
 
 if [[ -f "${FFMPEG_OUT}" ]]; then
+  lipo -verify_arch arm64 "${FFMPEG_OUT}" "${FFPROBE_OUT}"
   echo "ffmpeg already bundled at ${FFMPEG_OUT}, skipping"
   exit 0
 fi
@@ -26,6 +27,7 @@ fi
 
 mkdir -p build/ffmpeg-macos
 install -m755 "${FFMPEG_SRC}" "${FFMPEG_OUT}"
+lipo -verify_arch arm64 "${FFMPEG_OUT}" "${FFPROBE_OUT}"
 
 echo "Bundled: ${FFMPEG_OUT} ($(file "${FFMPEG_OUT}" | awk -F: '{print $2}' | xargs))"
 echo "Bundled: ${FFPROBE_OUT} ($(file "${FFPROBE_OUT}" | awk -F: '{print $2}' | xargs))"

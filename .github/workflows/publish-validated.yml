@@ -43,7 +43,7 @@ jobs:
           jq -e --arg sha "${source_sha}" --argjson workflow "${workflow_id}" \
             '.conclusion == "success" and .head_sha == $sha and .workflow_id == $workflow' source-run.json
           gh api "repos/${GH_REPO}/actions/runs/${VALIDATION_RUN}/jobs?per_page=100" > source-jobs.json
-          for job in metadata windows web-server docker-cpu-security; do
+          for job in metadata windows macos web-server docker-cpu-security; do
             jq -e --arg job "${job}" '.jobs | any(.name == $job and .conclusion == "success")' source-jobs.json
           done
           nvidia=$(jq -r '.jobs[] | select(.name == "nvidia-smoke") | .conclusion' source-jobs.json)
@@ -69,6 +69,13 @@ jobs:
         uses: actions/download-artifact@v7
         with:
           name: windows-${{ steps.source.outputs.version }}
+          run-id: ${{ inputs.validation_run }}
+          github-token: ${{ github.token }}
+          path: release-assets
+      - name: Download validated unsigned Mac artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: macos-${{ steps.source.outputs.version }}
           run-id: ${{ inputs.validation_run }}
           github-token: ${{ github.token }}
           path: release-assets
@@ -112,24 +119,34 @@ jobs:
           set -euo pipefail
           test -s "release-assets/audiobookforge-${VERSION}-setup.exe"
           test -s "release-assets/audiobookforge-${VERSION}-win-unpacked.zip"
+          test -s "release-assets/audiobookforge-${VERSION}-mac-arm64-unsigned.dmg"
+          test -s "release-assets/audiobookforge-${VERSION}-mac-arm64-unsigned.zip"
+          test -s release-assets/macos-validation.txt
+          test -s release-assets/MAC_THIRD_PARTY_LICENSES.json
           test -s release-assets/THIRD_PARTY_LICENSES.json
           test -s release-assets/docker-security.txt
           node -e 'const p=require("./package.json"),l=require("./package-lock.json");if(p.version!==process.env.VERSION||l.version!==p.version||l.packages[""].version!==p.version)throw Error("Version mismatch")'
           cp compose.yml compose.gpu.yml release-assets/
           cp docs/docker.md release-assets/DOCKER.md
+          cp docs/macos.md release-assets/MACOS.md
+          cp THIRD_PARTY_NOTICES.md release-assets/
           printf 'ABF_VERSION=%s\n' "${VERSION}" > release-assets/release.env
           printf '%s@%s\n' "${IMAGE}" "${DIGEST}" > release-assets/docker-image.txt
           (cd release-assets && sha256sum * > SHA256SUMS.txt)
           cat > release-body.md <<EOF
           ## Install
           Windows: download the setup.exe installer, or extract win-unpacked.zip and run audiobook-forge.exe.
+          Mac (Apple Silicon): download the mac-arm64-unsigned DMG or ZIP. No Apple account is needed.
+          This app is ad-hoc signed for ARM execution, not Developer ID signed or notarized. macOS may block the initial launch; see MACOS.md.
+          Linux is supported through Docker; this release does not include a native Linux desktop installer.
           Docker (linux/amd64): download compose.yml, compose.gpu.yml, and release.env. Rename release.env to .env and follow DOCKER.md.
           Image: ${IMAGE}:${VERSION}
           Exact tested image: ${IMAGE}@${DIGEST}
 
           ## Validation
-          Published unchanged from successful [validation run ${VALIDATION_RUN}](https://github.com/${GH_REPO}/actions/runs/${VALIDATION_RUN}). Windows, browser, CPU transcription, and high/critical security checks passed.
+          Published unchanged from successful [validation run ${VALIDATION_RUN}](https://github.com/${GH_REPO}/actions/runs/${VALIDATION_RUN}). Windows, unsigned Mac app startup and CPU transcription, browser, Docker CPU transcription, and high/critical security checks passed.
           NVIDIA hardware qualification: ${NVIDIA_RESULT}. If skipped, CUDA is bundled but not hardware-qualified; CPU is the validated path.
+          Metal GPU acceleration is included in the Mac binary but is not hardware-qualified by the CPU smoke check.
           Container SBOM/provenance is retained. SHA256SUMS.txt covers downloadable assets.
 
           ## Changes

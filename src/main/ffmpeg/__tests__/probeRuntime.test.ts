@@ -82,9 +82,9 @@ describe('packaged ffprobe discovery', () => {
 })
 
 describe('real media chapter extraction', () => {
-  // Linux CI installs without ffmpeg-static's download script; its boundary tests
-  // cannot run a real media fixture until the native tools are installed.
-  it.skipIf(!existsSync(getFfmpegPath())).each([false, true])(
+  // This exercises the Windows dependency and archive fallback. Mac packaging is
+  // exercised separately with the genuinely arm64 ffprobe built from source.
+  it.skipIf(process.platform !== 'win32' || !existsSync(getFfmpegPath())).each([false, true])(
     'reads both M4B chapters with isPackaged=%s',
     async (isPackaged) => {
       const metadataPath = join(root, 'chapters.txt')
