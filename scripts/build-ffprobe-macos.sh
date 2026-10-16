@@ -9,7 +9,7 @@ OUTPUT="${REPO_ROOT}/build/ffmpeg-macos/ffprobe"
 SRC="/tmp/abf-ffmpeg-src"
 
 if [[ -f "${OUTPUT}" ]]; then
-  lipo -verify_arch arm64 "${OUTPUT}"
+  lipo "${OUTPUT}" -verify_arch arm64
   echo "ffprobe already built at ${OUTPUT}, skipping"
   exit 0
 fi
@@ -45,6 +45,6 @@ make -j"$(sysctl -n hw.physicalcpu)" ffprobe
 
 mkdir -p "$(dirname "${OUTPUT}")"
 install -m755 ffprobe "${OUTPUT}"
-lipo -verify_arch arm64 "${OUTPUT}"
+lipo "${OUTPUT}" -verify_arch arm64
 
 echo "Built: ${OUTPUT}"

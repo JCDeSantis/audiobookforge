@@ -9,7 +9,7 @@ OUTPUT="build/whisper-macos/whisper-cli"
 SRC="/tmp/abf-whisper-src"
 
 if [[ -f "${OUTPUT}" ]]; then
-  lipo -verify_arch arm64 "${OUTPUT}"
+  lipo "${OUTPUT}" -verify_arch arm64
   echo "whisper-cli already built at ${OUTPUT}, skipping"
   exit 0
 fi
@@ -33,6 +33,6 @@ cmake --build "${SRC}/build" --target whisper-cli -j"$(sysctl -n hw.physicalcpu)
 
 mkdir -p "$(dirname "${OUTPUT}")"
 install -m755 "${SRC}/build/bin/whisper-cli" "${OUTPUT}"
-lipo -verify_arch arm64 "${OUTPUT}"
+lipo "${OUTPUT}" -verify_arch arm64
 
 echo "Built: ${OUTPUT}"

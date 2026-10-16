@@ -10,7 +10,9 @@ smoke_dir=$(mktemp -d)
 trap 'rm -rf -- "${smoke_dir}"' EXIT
 
 test "$(uname -m)" = arm64
-lipo -verify_arch arm64 "$whisper" "$ffmpeg" "$ffprobe"
+for binary in "$whisper" "$ffmpeg" "$ffprobe"; do
+  lipo "$binary" -verify_arch arm64
+done
 codesign --verify --deep --strict --verbose=2 "$app"
 codesign --display --verbose=4 "$app" 2> "${smoke_dir}/signature.txt"
 grep -q 'Signature=adhoc' "${smoke_dir}/signature.txt"
