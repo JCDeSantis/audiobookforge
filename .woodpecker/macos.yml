@@ -1,0 +1,44 @@
+labels:
+  platform: darwin/arm64
+
+when:
+  - event: tag
+    ref: refs/tags/v*
+
+steps:
+  - name: install
+    image: bash
+    commands:
+      - node --version
+      - npm --version
+      - npm ci
+
+  - name: build-sign-notarize
+    image: bash
+    environment:
+      CSC_LINK:
+        from_secret: csc_link
+      CSC_KEY_PASSWORD:
+        from_secret: csc_key_password
+      ABF_RCODESIGN_BIN:
+        from_secret: abf_rcodesign_bin
+      APPLE_ID:
+        from_secret: apple_id
+      APPLE_APP_SPECIFIC_PASSWORD:
+        from_secret: apple_app_specific_password
+      APPLE_TEAM_ID:
+        from_secret: apple_team_id
+    commands:
+      - node scripts/patch-electron-builder-codesign.mjs
+      - npm run build:mac:arm64 -- --publish never
+
+  - name: release
+    image: bash
+    environment:
+      GITHUB_TOKEN:
+        from_secret: github_token
+    commands:
+      - gh release create "${CI_COMMIT_TAG}" dist/*.dmg dist/*.zip
+          --repo "${CI_REPO}"
+          --title "Audiobook Forge ${CI_COMMIT_TAG}"
+          --notes "macOS arm64 signed build"
