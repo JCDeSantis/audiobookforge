@@ -88,6 +88,7 @@ function getLegacyWhisperExe(): string | null {
 
 function getBundledWhisperExe(): string | null {
   if (!app.isPackaged || process.platform !== 'darwin') return null
+  if (!process.resourcesPath) return null
   const bundled = join(process.resourcesPath, 'whisper', 'whisper-cli')
   return existsSync(bundled) ? bundled : null
 }
@@ -97,7 +98,7 @@ export function getCpuWhisperExe(): string | null {
   if (installed) return installed
   const legacy = isCudaBinaryDownloaded() ? null : getLegacyWhisperExe()
   if (legacy) return legacy
-  return null
+  return getBundledWhisperExe()
 }
 
 export function getCudaWhisperExe(): string | null {

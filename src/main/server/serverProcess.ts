@@ -4,7 +4,7 @@ import { join } from 'path'
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 
-const EMBEDDED_SERVER_PORT = 3000
+const EMBEDDED_SERVER_PORT = parseInt(process.env.ABF_PORT ?? '3000', 10) || 3000
 
 let serverProcess: UtilityProcess | null = null
 

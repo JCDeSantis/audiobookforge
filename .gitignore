@@ -10,6 +10,7 @@ build/ffmpeg-macos
 .DS_Store
 .eslintcache
 *.log*
+*.tsbuildinfo
 secrets/
 test-results/
 playwright-report/

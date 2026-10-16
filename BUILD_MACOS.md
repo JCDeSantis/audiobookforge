@@ -140,18 +140,16 @@ ggml_metal_init
 The macOS Electron app automatically starts the web server when it launches.
 The server listens on port 3000 and is accessible from other devices on your network.
 
-**Desktop window vs. server runtime:** The Electron window communicates with the app
-via IPC — it does not go through the web server. LAN clients that connect on port 3000
-use the server runtime directly. Both share the same data directory:
+**Desktop window vs. server runtime:** The Electron window communicates with the
+embedded server via IPC. LAN clients connect directly to the embedded server on port
+3000. Both use the same embedded server process and its data directory:
 ```
-~/Library/Application Support/Audiobook Forge/
+~/Library/Application Support/Audiobook Forge/server-data/
 ```
-Jobs, models, settings, tokens, and queued results are stored there and visible to both
-the desktop window and any LAN browser session.
 
 **Port conflicts:** If port 3000 is already in use the embedded server will fail to
 start and the desktop window will show no queue or progress. Free the port before
-launching, or set `ABF_PORT` to an available port:
+launching, or override with `ABF_PORT`:
 ```bash
 ABF_PORT=3001 open -a "Audiobook Forge"
 ```
@@ -201,23 +199,32 @@ Unsigned builds trigger a Gatekeeper warning. Right-click → Open to bypass.
 ### Signed build
 
 Requires an Apple Developer ID Application certificate in the login Keychain.
-Copy `.env.mac.example` to `.env.mac` and set `CSC_NAME` to your identity:
 
 ```bash
-# Find your identity name:
+# Find your identity name (copy the full quoted string):
 security find-identity -v -p codesigning | grep "Developer ID Application"
+```
 
+Copy `.env.mac.example` to `.env.mac` and replace the placeholder with your identity:
+
+```bash
+cp .env.mac.example .env.mac
+# Edit .env.mac — set CSC_NAME="Developer ID Application: Your Name (TEAMID)"
+```
+
+Verify the file sources correctly before building:
+
+```bash
+source .env.mac && echo "CSC_NAME=$CSC_NAME"
+# Expected: CSC_NAME=Developer ID Application: Your Name (TEAMID)
+```
+
+Then build:
+
+```bash
 npm run build:mac:signed
 # Output: dist/audiobookforge-<version>.dmg
 ```
 
 The resulting DMG is Developer ID signed. On macOS 12 and later, Gatekeeper still requires right-click → Open on first launch unless the build is also notarized. To enable notarization, add `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID` to `.env.mac` and set `notarize: true` in `electron-builder.yml`.
-
-### Universal binary (Intel + Apple Silicon)
-
-```bash
-npm run build:mac:universal
-```
-
-Produces a fat binary that runs natively on both x64 and arm64 Macs.
 
