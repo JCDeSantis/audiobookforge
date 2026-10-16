@@ -24,12 +24,12 @@ export function getFfmpegPath(): string {
   return unpackedPath(ffmpegStatic)
 }
 
-function getFfprobePath(): string | null {
-  if (app.isPackaged) {
+export function getFfprobePath(): string | null {
+  if (app.isPackaged && process.platform === 'darwin') {
     const bundled = join(process.resourcesPath, 'ffmpeg', 'ffprobe')
-    return existsSync(bundled) ? bundled : null
+    if (existsSync(bundled)) return bundled
   }
-  return typeof ffprobeStaticPath === 'string' ? ffprobeStaticPath : null
+  return typeof ffprobeStaticPath === 'string' ? unpackedPath(ffprobeStaticPath) : null
 }
 
 // Returns true if the bundled ffmpeg binary supports h264_nvenc (NVIDIA GPU encoding).
