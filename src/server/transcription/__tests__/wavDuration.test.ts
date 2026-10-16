@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync, writeFileSync } from 'fs'
+import { mkdtempSync, rmSync, truncateSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 import { readWavDuration } from '../wavDuration'
@@ -109,8 +109,23 @@ describe('readWavDuration', () => {
   it('returns duration over 20 minutes so the transcriber can produce multiple segments', () => {
     const byteRate = 32000
     const durationSec = 75 * 60
+    const dataSize = byteRate * durationSec
     const path = join(root, 'long.wav')
-    writeFileSync(path, makeWav(byteRate, byteRate * durationSec, listChunk(12)))
+    const fmt = fmtChunk(byteRate)
+    const list = listChunk(12)
+    const dataHeader = Buffer.alloc(8)
+    dataHeader.write('data', 0, 'ascii')
+    dataHeader.writeUInt32LE(dataSize, 4)
+    const header = Buffer.concat([
+      riffHeader(fmt.length + list.length + dataHeader.length + dataSize),
+      fmt,
+      list,
+      dataHeader
+    ])
+
+    // The reader only needs the chunks and file length, not 144 MB of sample buffers.
+    writeFileSync(path, header)
+    truncateSync(path, header.length + dataSize)
     expect(readWavDuration(path)).toBeCloseTo(durationSec, 5)
   })
 })
