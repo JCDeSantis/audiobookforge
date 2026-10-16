@@ -262,19 +262,27 @@ export class ServerAbsClient {
   }
 
   async books(session: ServerAbsSession, libraryId: string): Promise<AbsBook[]> {
-    const response = await this.sessionJson<{ results: AbsApiItem[] }>(
-      session,
-      `/api/libraries/${encodeURIComponent(libraryId)}/items?limit=500&page=0`
-    )
-    const books: AbsBook[] = new Array(response.results.length)
+    const PAGE_SIZE = 500
+    let page = 0
+    const allResults: AbsApiItem[] = []
+    while (true) {
+      const response = await this.sessionJson<{ results: AbsApiItem[]; total: number }>(
+        session,
+        `/api/libraries/${encodeURIComponent(libraryId)}/items?limit=${PAGE_SIZE}&page=${page}`
+      )
+      allResults.push(...response.results)
+      if (allResults.length >= response.total || response.results.length < PAGE_SIZE) break
+      page++
+    }
+    const books: AbsBook[] = new Array(allResults.length)
     let next = 0
     await Promise.all(
-      Array.from({ length: Math.min(6, response.results.length) }, async () => {
-        while (next < response.results.length) {
+      Array.from({ length: Math.min(6, allResults.length) }, async (): Promise<void> => {
+        while (next < allResults.length) {
           const index = next++
           // Library listings can omit libraryFiles. Fetch details rather than
           // interpreting an absent file list as "no subtitles".
-          books[index] = await this.book(session, response.results[index].id)
+          books[index] = await this.book(session, allResults[index].id)
         }
       })
     )

@@ -414,11 +414,19 @@ export function registerAbsIpc(): void {
 
   ipcMain.handle(IPC.ABS_GET_BOOKS, async (_event, libraryId: string) => {
     const { baseUrl, apiKey } = await getBaseUrlAndKey()
-    const res = await axios.get<{ results: AbsApiItem[] }>(
-      `${baseUrl}/api/libraries/${libraryId}/items?limit=500&page=0`,
-      { headers: authHeaders(apiKey), maxRedirects: 0 }
-    )
-    return fetchAbsBooksWithDetails(baseUrl, apiKey, res.data.results)
+    const PAGE_SIZE = 500
+    let page = 0
+    const allResults: AbsApiItem[] = []
+    while (true) {
+      const res = await axios.get<{ results: AbsApiItem[]; total: number }>(
+        `${baseUrl}/api/libraries/${libraryId}/items?limit=${PAGE_SIZE}&page=${page}`,
+        { headers: authHeaders(apiKey), maxRedirects: 0 }
+      )
+      allResults.push(...res.data.results)
+      if (allResults.length >= res.data.total || res.data.results.length < PAGE_SIZE) break
+      page++
+    }
+    return fetchAbsBooksWithDetails(baseUrl, apiKey, allResults)
   })
 
   ipcMain.handle(IPC.ABS_GET_BOOK, async (_event, itemId: string) => {

@@ -22,6 +22,7 @@ import {
   estimateProcessingBytes,
   isDiskFullError
 } from '../../core/storage/processingSpace'
+import { readWavDuration } from './wavDuration'
 
 const SEGMENT_SECONDS = 20 * 60
 
@@ -42,6 +43,7 @@ export interface ServerTranscriberConfig {
   ffprobePath: string
   whisperCpuPath: string
   whisperCudaPath: string
+  whisperAllowGpu?: boolean
   resultRetentionMs?: number
   checkpointRetentionMs?: number
 }
@@ -138,7 +140,7 @@ export class ServerTranscriber {
       onProgress({ phase: 'preparing', percent: 100 })
 
       const promptText = epubPath ? await extractEpubVocabulary(epubPath) : ''
-      const duration = await this.probeDuration(wavPath, signal)
+      const duration = await this.probeDuration(wavPath)
       const segmentCount = Math.max(1, Math.ceil(duration / SEGMENT_SECONDS))
       const checkpoints = new ServerCheckpointStore(
         this.paths,
@@ -363,25 +365,12 @@ export class ServerTranscriber {
     }
   }
 
-  private async probeDuration(wavPath: string, signal: AbortSignal): Promise<number> {
-    const result = await this.run(
-      this.config.ffprobePath,
-      [
-        '-v',
-        'error',
-        '-show_entries',
-        'format=duration',
-        '-of',
-        'default=noprint_wrappers=1:nokey=1',
-        wavPath
-      ],
-      signal
-    )
-    const duration = Number.parseFloat(result.stdout.trim())
-    if (result.code !== 0 || !Number.isFinite(duration) || duration <= 0) {
-      throw new Error(`Unable to determine prepared audio duration: ${result.stderr.slice(-800)}`)
+  private probeDuration(wavPath: string): Promise<number> {
+    try {
+      return Promise.resolve(readWavDuration(wavPath))
+    } catch (err) {
+      return Promise.reject(new Error(`Unable to determine prepared audio duration: ${String(err)}`))
     }
-    return duration
   }
 
   private runWhisper(
@@ -410,7 +399,7 @@ export class ServerTranscriber {
       String(Math.max(1, Math.min(cpus().length, 8)))
     ]
     if (promptText) args.push('--prompt', promptText)
-    if (backend === 'cpu') args.push('--no-gpu')
+    if (backend === 'cpu' && !this.config.whisperAllowGpu) args.push('--no-gpu')
     return this.run(executable, args, signal, (stderr) => {
       const match = stderr.match(/progress\s*=\s*(\d+)%/)
       if (match) onProgress({ phase: 'transcribing', percent: Number(match[1]) })

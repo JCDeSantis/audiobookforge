@@ -303,4 +303,77 @@ describe('QueuePanel', () => {
 
     expect(removeMock).toHaveBeenCalledWith('queued-job')
   })
+
+  it('copy button on failed job writes error text to clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true
+    })
+
+    const errorMessage = 'spawn /usr/bin/whisper-cli ENOENT'
+    useAppStore.getState().setJobs([
+      createJob({
+        id: 'failed-job',
+        status: 'failed',
+        error: errorMessage,
+        completedAt: Date.now()
+      })
+    ])
+
+    render(<QueuePanel />)
+    fireEvent.click(screen.getByRole('button', { name: 'Finished (1)' }))
+
+    const copyButton = screen.getByTitle('Copy error to clipboard')
+    expect(copyButton).toBeInTheDocument()
+
+    fireEvent.click(copyButton)
+
+    expect(writeText).toHaveBeenCalledWith(errorMessage)
+  })
+
+  it('falls back to prompt when clipboard API is unavailable', () => {
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true })
+    const mockPrompt = vi.spyOn(window, 'prompt').mockReturnValue(null)
+
+    const errorMessage = 'Whisper exited with code 1'
+    useAppStore.getState().setJobs([
+      createJob({
+        id: 'failed-job',
+        status: 'failed',
+        error: errorMessage,
+        completedAt: Date.now()
+      })
+    ])
+
+    render(<QueuePanel />)
+    fireEvent.click(screen.getByRole('button', { name: 'Finished (1)' }))
+    fireEvent.click(screen.getByTitle('Copy error to clipboard'))
+
+    expect(mockPrompt).toHaveBeenCalledWith('Copy error:', errorMessage)
+    mockPrompt.mockRestore()
+  })
+
+  it('falls back to prompt when clipboard writeText rejects', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('NotAllowedError'))
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const mockPrompt = vi.spyOn(window, 'prompt').mockReturnValue(null)
+
+    const errorMessage = 'CUDA out of memory'
+    useAppStore.getState().setJobs([
+      createJob({
+        id: 'failed-job',
+        status: 'failed',
+        error: errorMessage,
+        completedAt: Date.now()
+      })
+    ])
+
+    render(<QueuePanel />)
+    fireEvent.click(screen.getByRole('button', { name: 'Finished (1)' }))
+    fireEvent.click(screen.getByTitle('Copy error to clipboard'))
+
+    await waitFor(() => expect(mockPrompt).toHaveBeenCalledWith('Copy error:', errorMessage))
+    mockPrompt.mockRestore()
+  })
 })

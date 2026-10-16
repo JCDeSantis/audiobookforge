@@ -248,9 +248,31 @@ function JobCard({
       )}
 
       {job.status === 'failed' && job.error && (
-        <p className="stable-clamp-2 mt-2 h-10 text-xs leading-5 text-[#ff9b9b]" title={job.error}>
-          {job.error}
-        </p>
+        <div className="mt-2 flex items-start gap-1">
+          <p className="stable-clamp-2 h-10 flex-1 text-xs leading-5 text-[#ff9b9b]" title={job.error}>
+            {job.error}
+          </p>
+          <button
+            className="mt-0.5 shrink-0 rounded p-0.5 text-[#ff9b9b] opacity-50 hover:opacity-100"
+            title="Copy error to clipboard"
+            onClick={(e) => {
+              e.stopPropagation()
+              const text = job.error ?? ''
+              if (navigator.clipboard?.writeText) {
+                navigator.clipboard.writeText(text).catch(() => {
+                  prompt('Copy error:', text)
+                })
+              } else {
+                prompt('Copy error:', text)
+              }
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+          </button>
+        </div>
       )}
 
       {job.qualityReport && (
