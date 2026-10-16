@@ -8,6 +8,11 @@ vi.mock('music-metadata', () => ({
 vi.mock('ffmpeg-static', () => ({ default: '/usr/bin/ffmpeg' }))
 vi.mock('ffprobe-static', () => ({ default: null }))
 vi.mock('electron', () => ({ app: { isPackaged: false } }))
+// Keep metadata unit tests independent of installed native tools and Rosetta prompts.
+vi.mock('fs', () => {
+  const existsSync = vi.fn(() => false)
+  return { existsSync, default: { existsSync } }
+})
 
 import { parseFile as mmParseFile } from 'music-metadata'
 import { probeFile, parseChaptersFromFfprobeOutput } from '../probe'
@@ -49,7 +54,9 @@ describe('probeFile', () => {
   it('detects cover art when picture array is present', async () => {
     mockParseFile.mockResolvedValueOnce(
       makeMetadata({
-        common: { picture: [{ data: Buffer.from('img'), format: 'image/jpeg' }] } as unknown as IAudioMetadata['common']
+        common: {
+          picture: [{ data: Buffer.from('img'), format: 'image/jpeg' }]
+        } as unknown as IAudioMetadata['common']
       })
     )
 
@@ -68,7 +75,13 @@ describe('probeFile', () => {
 
   it('throws when duration is not finite', async () => {
     mockParseFile.mockResolvedValueOnce(
-      makeMetadata({ format: { duration: NaN, container: 'M4A', chapters: [] } as unknown as IAudioMetadata['format'] })
+      makeMetadata({
+        format: {
+          duration: NaN,
+          container: 'M4A',
+          chapters: []
+        } as unknown as IAudioMetadata['format']
+      })
     )
 
     await expect(probeFile('/some/file.m4b')).rejects.toThrow('Could not read duration')

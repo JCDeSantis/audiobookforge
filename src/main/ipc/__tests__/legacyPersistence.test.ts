@@ -1,11 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  copyFileSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync
-} from 'fs'
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { tmpdir } from 'os'
 
@@ -33,6 +27,22 @@ import { PersistenceError } from '../../../core/persistence/atomicJsonStore'
 const fixturesDir = resolve('src/main/ipc/__tests__/fixtures')
 let userDataPath = ''
 
+function fixturePath(windowsPath: string): string {
+  return process.platform === 'win32'
+    ? windowsPath
+    : `/${windowsPath.slice(3).replaceAll('\\', '/')}`
+}
+
+function writeLegacyQueue(): void {
+  // Retain the original Windows migration fixture there; use native absolute paths on Mac/Linux.
+  const queue: unknown = JSON.parse(
+    readFileSync(join(fixturesDir, 'v1.1-queue.json'), 'utf-8'),
+    (_key, value: unknown) =>
+      typeof value === 'string' && value.startsWith('C:\\') ? fixturePath(value) : value
+  )
+  writeFileSync(join(userDataPath, 'queue.json'), JSON.stringify(queue))
+}
+
 describe('v1.1 persistence baseline', () => {
   beforeEach(() => {
     userDataPath = mkdtempSync(join(tmpdir(), 'audiobook-forge-v1.1-'))
@@ -55,7 +65,7 @@ describe('v1.1 persistence baseline', () => {
   })
 
   it('hydrates legacy local and ABS queue records with their output references intact', () => {
-    copyFileSync(join(fixturesDir, 'v1.1-queue.json'), join(userDataPath, 'queue.json'))
+    writeLegacyQueue()
 
     const jobs = loadQueue()
 
@@ -64,8 +74,14 @@ describe('v1.1 persistence baseline', () => {
       id: 'legacy-local-done',
       status: 'done',
       source: 'local',
-      outputPath: 'C:\\Subtitles',
-      srtPaths: ['C:\\Subtitles\\Legacy Book.srt', 'C:\\Subtitles\\Legacy Book.vtt']
+      audioFiles: [fixturePath('C:\\Audiobooks\\Legacy Book.m4b')],
+      outputPath: fixturePath('C:\\Subtitles'),
+      epubPath: fixturePath('C:\\Audiobooks\\Legacy Book.epub'),
+      srtPath: fixturePath('C:\\Subtitles\\Legacy Book.srt'),
+      srtPaths: [
+        fixturePath('C:\\Subtitles\\Legacy Book.srt'),
+        fixturePath('C:\\Subtitles\\Legacy Book.vtt')
+      ]
     })
     expect(jobs[1]).toMatchObject({
       id: 'legacy-abs-paused',
@@ -76,7 +92,7 @@ describe('v1.1 persistence baseline', () => {
   })
 
   it('persists the current queue format as readable JSON', () => {
-    copyFileSync(join(fixturesDir, 'v1.1-queue.json'), join(userDataPath, 'queue.json'))
+    writeLegacyQueue()
     const jobs = loadQueue()
 
     persistQueue(jobs)
