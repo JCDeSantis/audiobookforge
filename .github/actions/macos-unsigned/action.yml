@@ -29,6 +29,8 @@ runs:
     - name: Build unsigned DMG and ZIP
       shell: bash
       env:
+        # PR builds still need the credential-free ad-hoc signature (mac.identity: '-').
+        CSC_FOR_PULL_REQUEST: 'true'
         CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         CSC_LINK: ''
         CSC_NAME: ''
