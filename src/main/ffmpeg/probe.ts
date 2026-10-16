@@ -11,7 +11,7 @@ let nvencCache: boolean | null = null
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const ffmpegStatic = require('ffmpeg-static') as string
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const ffprobeStaticPath = require('ffprobe-static') as string | null
+const ffprobeStaticPath = (require('ffprobe-static') as { path: string } | null)?.path ?? null
 
 const execFileAsync = promisify(execFile)
 

@@ -20,7 +20,8 @@ steps:
         from_secret: csc_link
       CSC_KEY_PASSWORD:
         from_secret: csc_key_password
-      ABF_RCODESIGN_BIN: /Users/juha/.local/bin/rcodesign
+      ABF_RCODESIGN_BIN:
+        from_secret: abf_rcodesign_bin
       APPLE_ID:
         from_secret: apple_id
       APPLE_APP_SPECIFIC_PASSWORD:

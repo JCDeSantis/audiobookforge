@@ -140,16 +140,23 @@ ggml_metal_init
 The macOS Electron app automatically starts the web server when it launches.
 The server listens on port 3000 and is accessible from other devices on your network.
 
-**Desktop window vs. server runtime:** The Electron window communicates with the
-embedded server via IPC. LAN clients connect directly to the embedded server on port
-3000. Both use the same embedded server process and its data directory:
+**Desktop window vs. server runtime:** The Electron desktop window and the embedded
+web server are independent runtimes with separate state. The desktop window uses a
+local IPC queue stored in:
+```
+~/Library/Application Support/Audiobook Forge/
+```
+The embedded server stores its own queue, models, and settings under:
 ```
 ~/Library/Application Support/Audiobook Forge/server-data/
 ```
+LAN clients connect to the embedded server; their session is independent of the
+desktop window. Jobs submitted via the desktop window are not visible to LAN clients
+and vice versa.
 
 **Port conflicts:** If port 3000 is already in use the embedded server will fail to
-start and the desktop window will show no queue or progress. Free the port before
-launching, or override with `ABF_PORT`:
+start. The desktop window continues to work via IPC. Free the port before
+launching, or override the server port with `ABF_PORT`:
 ```bash
 ABF_PORT=3001 open -a "Audiobook Forge"
 ```

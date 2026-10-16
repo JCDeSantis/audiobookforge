@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
 function patch(relPath, patches) {
   const file = resolve(root, relPath)
   let code = readFileSync(file, 'utf8')
@@ -40,7 +41,9 @@ function patch(relPath, patches) {
     if (!code.includes(before)) {
       console.error(`ERROR: patch target not found in ${relPath}:`)
       console.error(`  ${before.slice(0, 80)}`)
-      console.error('electron-builder version may have changed — review scripts/patch-electron-builder-codesign.mjs')
+      console.error(
+        'electron-builder version may have changed — review scripts/patch-electron-builder-codesign.mjs'
+      )
       process.exit(1)
     }
     code = code.replace(before, after)
