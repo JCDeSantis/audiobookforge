@@ -32,9 +32,10 @@ runs:
         # PR builds still need the credential-free ad-hoc signature (mac.identity: '-').
         CSC_FOR_PULL_REQUEST: 'true'
         CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        CSC_LINK: ''
-        CSC_NAME: ''
-      run: npm run build:mac:arm64
+      run: |
+        # Empty CSC_LINK is treated as a certificate path, so remove credential inputs entirely.
+        unset CSC_LINK CSC_NAME CSC_KEY_PASSWORD CSC_KEYCHAIN CSC_INSTALLER_LINK CSC_INSTALLER_KEY_PASSWORD
+        npm run build:mac:arm64
     - name: Verify native resources and transcribe speech on CPU
       shell: bash
       run: bash scripts/smoke-macos.sh 2>&1 | tee dist/macos-validation.txt
