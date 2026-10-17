@@ -1,0 +1,18 @@
+extends: ./electron-builder.yml
+mac:
+  identity: '-'
+  notarize: false
+  hardenedRuntime: false
+  binaries:
+    - Contents/Resources/whisper/whisper-cli
+    - Contents/Resources/ffmpeg/ffmpeg
+    - Contents/Resources/ffmpeg/ffprobe
+  artifactName: ${name}-${version}-mac-arm64-unsigned.${ext}
+  target:
+    - target: dmg
+      arch: arm64
+    - target: zip
+      arch: arm64
+dmg:
+  sign: false
+  artifactName: ${name}-${version}-mac-arm64-unsigned.${ext}

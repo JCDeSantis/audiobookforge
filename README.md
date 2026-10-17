@@ -1,12 +1,12 @@
 # Audiobook Forge
 
 ![Version](https://img.shields.io/badge/version-v1.3.0-d92a3d?style=for-the-badge)
-![Platform](https://img.shields.io/badge/platform-Windows%20%2B%20Docker-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
+![Platform](https://img.shields.io/badge/platform-Windows%20%2B%20Mac%20%2B%20Docker-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 ![License](https://img.shields.io/badge/license-MIT-fff4f4?style=for-the-badge&labelColor=2a0d0d&color=8c3131)
 
 ![Audiobook Forge logo](docs/readme-assets/audiobook-forge-logo.png)
 
-Audiobook Forge is a Windows desktop and single-user Docker web application for generating audiobook subtitle files with [Audiobookshelf](https://github.com/advplyr/audiobookshelf) integration.
+Audiobook Forge is a Windows and Apple Silicon Mac desktop application, plus a single-user Docker web application, for generating audiobook subtitle files with [Audiobookshelf](https://github.com/advplyr/audiobookshelf) integration.
 
 It is built for users who want a focused workflow for selecting books, choosing a Whisper model, queueing subtitle jobs, and generating `.srt` files that can be saved locally or uploaded back into Audiobookshelf automatically.
 
@@ -52,7 +52,7 @@ Instead, Audiobook Forge helps create subtitle files for workflows such as:
 
 ### Windows Release
 
-Windows and Docker share one version. Published releases include these Windows assets on [GitHub Releases](https://github.com/JCDeSantis/audiobookforge/releases):
+Windows, Mac, and Docker share one version. Published releases include these Windows assets on [GitHub Releases](https://github.com/JCDeSantis/audiobookforge/releases):
 
 - a Windows installer
 - a portable `win-unpacked.zip` build that can be extracted and run from a folder
@@ -79,6 +79,12 @@ Model guidance:
 Portable build note:
 
 - after extracting the portable zip, run `audiobook-forge.exe` from the unpacked folder
+
+### Mac Release (Apple Silicon)
+
+Download the `mac-arm64-unsigned.dmg` or matching ZIP from the same release. The app includes its native transcription tools and needs no Apple account. It is ad-hoc signed for Apple Silicon execution, **not Developer ID signed or notarized**; macOS may require approval through System Settings → Privacy & Security → Open Anyway on first launch.
+
+See the [Mac installation guide](docs/macos.md) for install steps, checksums, and the separate desktop/browser sessions. Intel Mac installers are not included. Linux users should use the Docker runtime below.
 
 ### Docker Web Runtime
 
@@ -201,7 +207,7 @@ The script prints word error rate, edit count, and word counts as JSON so model 
 
 ## Release Automation
 
-This repo includes coordinated GitHub Actions automation for Windows and Docker builds:
+This repo includes coordinated GitHub Actions automation for Windows, unsigned Apple Silicon Mac, and CPU/CUDA Docker builds:
 
 - validation workflow: [.github/workflows/ci.yml](.github/workflows/ci.yml)
 - release workflow: [.github/workflows/release.yml](.github/workflows/release.yml)
@@ -209,8 +215,8 @@ This repo includes coordinated GitHub Actions automation for Windows and Docker 
 Release behavior:
 
 - Pushes and pull requests run validation
-- An exact `v<package version>` tag builds Windows installer/portable assets and validates the universal Docker image
-- Stable publication requires Windows and browser validation, CPU image startup and real transcription, and security scanning
+- An exact `v<package version>` tag builds Windows installer/portable assets, unsigned Apple Silicon DMG/ZIP assets, and validates the universal Docker image
+- Stable publication requires Windows and browser validation, packaged Mac startup and CPU transcription, CPU image startup and real transcription, and security scanning
 - Real NVIDIA qualification is optional; enable it only when a self-hosted `linux`, `x64`, `nvidia` runner is available. If enabled, it must pass before publication
 - Tag pushes validate only; stable publication requires an explicit approved workflow dispatch
 - The workflow promotes the exact tested Docker digest to version/SHA tags, retaining SBOM and provenance, and publishes Windows assets, Compose files, checksums, and license records
@@ -220,9 +226,9 @@ Release behavior:
 
 1. Merge the release workflow into the default branch (`master`) so **Actions → Coordinated Release → Run workflow** is available. Confirm Actions can write repository contents and packages. The built-in `GITHUB_TOKEN` is used; no Docker Hub account is required.
 2. Complete the acceptance checklist, update `package.json` and `package-lock.json` to a new unused version, and commit the release candidate. Create and push its exact `v<version>` tag. Never move an existing release tag.
-3. The tag run builds Windows downloads and a Docker candidate, runs the required checks, and leaves stable releases unpublished. Review the run and its Windows/security artifacts.
-4. Run **Publish Validated Release** with the immutable tag and the successful Coordinated Release run ID. It reuses that run’s Windows artifacts and tested Docker digest without rebuilding. NVIDIA qualification remains recorded as skipped when no GPU runner was used.
-5. Verify both Windows downloads and the versioned image are available. On the first GHCR publication, set the package visibility to **Public** in its GitHub package settings so users can pull without signing in.
+3. The tag run builds Windows and unsigned Mac downloads plus a Docker candidate, runs the required checks, and leaves stable releases unpublished. Review its Windows, Mac, and security artifacts. No Apple signing/notarization credentials are needed.
+4. Run **Publish Validated Release** with the immutable tag and the successful Coordinated Release run ID. It requires the Mac job too, and reuses the exact Windows/Mac artifacts and tested Docker digest without rebuilding. NVIDIA qualification remains recorded as skipped when no GPU runner was used.
+5. Verify the Windows and Mac downloads and the versioned image are available. On the first GHCR publication, set the package visibility to **Public** in its GitHub package settings so users can pull without signing in.
 
 Validation runs push temporary `candidate-<run>-<attempt>` images; users should install published version tags. GitHub Releases and GHCR cannot be updated atomically: the workflow stages Windows assets in a draft, promotes the tested versioned image, publishes the release, and finally updates `latest`. If the final channel update fails, rerun that failed job; the versioned release remains usable.
 

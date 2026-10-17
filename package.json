@@ -35,11 +35,12 @@
     "postinstall": "electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
-    "build:mac": "electron-vite build && electron-builder --mac",
+    "build:mac": "npm run build:mac:arm64",
     "build:whisper:macos": "bash scripts/build-whisper-macos.sh",
     "build:ffmpeg:macos": "bash scripts/bundle-ffmpeg-macos.sh",
     "build:mac:signed": "bash scripts/build-mac-signed.sh",
-    "build:mac:arm64": "npm run build:whisper:macos && npm run build:ffmpeg:macos && npm run build && npm run build:server && electron-builder --mac --arm64",
+    "build:mac:arm64": "npm run build:whisper:macos && npm run build:ffmpeg:macos && npm run build && npm run build:server && electron-builder --config electron-builder.mac-unsigned.yml --mac --arm64 --publish never",
+    "test:mac:app": "node scripts/smoke-macos-app.mjs",
     "build:linux": "electron-vite build && electron-builder --linux"
   },
   "dependencies": {

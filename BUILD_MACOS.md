@@ -6,7 +6,7 @@ Three modes are available on M-series Macs:
 |---|---|---|
 | Docker (arm64) | CPU only | Simple self-contained deployment |
 | Native server | Metal (M-series GPU) | Best transcription performance |
-| Electron DMG | Metal (auto) | Desktop app, signed for distribution |
+| Electron DMG | Metal (auto) | Desktop app, unsigned/ad-hoc release by default |
 
 ---
 
@@ -133,7 +133,7 @@ ggml_metal_init
 
 ---
 
-## Mode 3 — Electron Desktop App (signed DMG)
+## Mode 3 — Electron Desktop App (unsigned DMG)
 
 ### Embedded web server
 
@@ -181,10 +181,11 @@ Metal is used whenever whisper-cli was compiled with `-DGGML_METAL=ON`.
 
 ### Local one-off build (unsigned)
 
-Requires Xcode CLI tools — install once if not already present:
+Requires Xcode CLI tools and CMake — install once if not already present:
 
 ```bash
 xcode-select --install
+brew install cmake
 ```
 
 The build automatically compiles whisper-cli with Metal support and bundles it
@@ -198,12 +199,12 @@ Then build:
 ```bash
 npm ci
 npm run build:mac:arm64
-# Output: dist/Audiobook Forge-<version>-arm64.dmg
+# Output: dist/audiobookforge-<version>-mac-arm64-unsigned.dmg (and ZIP)
 ```
 
-Unsigned builds trigger a Gatekeeper warning. Right-click → Open to bypass.
+This command explicitly uses the unsigned configuration, disables notarization, and applies an ad-hoc signature for Apple Silicon execution. It does not need an Apple account or certificates. Follow [the Mac installation guide](docs/macos.md) for System Settings → Privacy & Security → Open Anyway if Gatekeeper blocks first launch. Run `bash scripts/smoke-macos.sh` and `npm run test:mac:app` to validate the packaged build on Apple Silicon.
 
-### Signed build
+### Optional Developer ID build (outside the default release workflow)
 
 Requires an Apple Developer ID Application certificate in the login Keychain.
 

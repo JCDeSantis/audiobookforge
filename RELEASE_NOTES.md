@@ -1,3 +1,22 @@
+# Audiobook Forge v1.3.0
+
+Full credit to **[@xludx](https://github.com/xludx)** for the macOS / Apple Silicon support and the improvements contributed through [PR #6](https://github.com/JCDeSantis/audiobookforge/pull/6) and [PR #7](https://github.com/JCDeSantis/audiobookforge/pull/7). Thank you for making this release possible.
+
+- Add an Apple Silicon desktop app with a bundled Whisper engine, Metal support, FFmpeg tools, and an optional embedded web interface.
+- Fetch Audiobookshelf libraries beyond the first 500 books.
+- Improve audio metadata probing and prepared WAV duration handling.
+- Make failed-job errors easier to copy for troubleshooting.
+
+## Downloads
+
+- Windows: installer and portable ZIP.
+- Mac: Apple Silicon `mac-arm64-unsigned.dmg` and ZIP. No Apple account or signing credentials are required. The app is ad-hoc signed for ARM execution; it is **not Developer ID signed or notarized**. Follow the included `MACOS.md` if macOS blocks the first launch.
+- Linux: the existing amd64 Docker image supports CPU and NVIDIA CUDA hosts. Native Linux desktop installers and an ARM64 Docker image are not part of this coordinated release.
+
+Release publication requires Windows and Mac validation, browser tests, CPU container transcription, and the high/critical vulnerability scan. Mac Metal acceleration and Docker CUDA are included; actual GPU hardware qualification is reported separately rather than inferred from a CPU test. Desktop and embedded Mac web sessions have separate queues and settings.
+
+---
+
 # Audiobook Forge v1.2.3
 
 - Refresh expired Audiobookshelf access tokens in the Docker runtime and retry rejected requests once, including subtitle uploads after long transcriptions.
